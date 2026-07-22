@@ -35,6 +35,10 @@
                     <i class="fa-solid fa-user-plus"></i>
                     <span class="text-sm">Add Walk-in</span>
                 </button>
+                <button id="btn-clear" class="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg shadow-sm font-medium hover:bg-red-100 transition-colors">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span class="text-sm">Clear Data</span>
+                </button>
             </div>
         </header>
 
@@ -150,6 +154,7 @@
         const debugBanner = document.getElementById('debug-banner');
         const btnExport = document.getElementById('btn-export');
         const btnWalkin = document.getElementById('btn-walkin');
+        const btnClear = document.getElementById('btn-clear');
         const btnToggleScanner = document.getElementById('btn-toggle-scanner');
         const scannerBtnText = document.getElementById('scanner-btn-text');
         const cameraSelect = document.getElementById('camera-select');
@@ -163,6 +168,27 @@
         const statTotal = document.getElementById('stat-total');
         const statCheckedIn = document.getElementById('stat-checked-in');
         const statRemaining = document.getElementById('stat-remaining');
+
+        // --- BROWSER STORAGE FUNCTIONS ---
+        function saveData() {
+            localStorage.setItem('qrScannerData', JSON.stringify(attendees));
+        }
+
+        function loadData() {
+            const saved = localStorage.getItem('qrScannerData');
+            if (saved) {
+                try {
+                    attendees = JSON.parse(saved);
+                    if (attendees.length > 0) {
+                        fileStatus.textContent = `Restored ${attendees.length} attendees from previous session.`;
+                        fileStatus.className = "text-emerald-600 font-medium mt-1";
+                        updateView();
+                    }
+                } catch (e) {
+                    console.error("Failed to load saved data");
+                }
+            }
+        }
 
         function showDebug(message, isError = true) {
             debugBanner.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border-red-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
@@ -195,7 +221,10 @@
             }
         }
 
-        window.addEventListener('DOMContentLoaded', populateCameraList);
+        window.addEventListener('DOMContentLoaded', () => {
+            populateCameraList();
+            loadData(); // Load data if page is refreshed
+        });
 
         function initAudio() {
             if (!audioCtx) {
@@ -228,7 +257,6 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // --- ROBUST CSV PARSER FUNCTION ---
         function csvToArray(strData, strDelimiter){
             strDelimiter = (strDelimiter || ",");
             var objPattern = new RegExp(
@@ -287,7 +315,6 @@
                         return;
                     }
 
-                    // --- QUALTRICS ROW SKIPPING ---
                     let dataStartIdx = 1;
                     for (let i = 0; i < Math.min(6, rawRows.length); i++) {
                         const rowStr = rawRows[i].join('').toLowerCase();
@@ -297,14 +324,12 @@
                         }
                     }
 
-                    // --- NEW MULTI-MATCH COLUMN DETECTION ---
                     let lastNameIndices = [];
                     let firstNameIndices = [];
                     let emailIndices = [];
                     let parentGuardIndices = [];
                     let fullNameIndices = [];
 
-                    // Scan all rows *before* data starts for header names
                     for (let r = 0; r < dataStartIdx; r++) {
                         rawRows[r].forEach((col, idx) => {
                             if (!col) return;
@@ -320,7 +345,6 @@
 
                     attendees = [];
 
-                    // Helper function: check all possible index columns for a value and return the first one that isn't blank
                     const getValue = (indices, row) => {
                         for (let idx of indices) {
                             if (row[idx] && row[idx].trim() !== '') return row[idx].trim();
@@ -336,7 +360,6 @@
                         let firstName = getValue(firstNameIndices, row);
                         let email = getValue(emailIndices, row).toLowerCase();
 
-                        // Fallback for Parent/Guardian generic columns if the explicit First/Last wasn't found
                         if (!firstName && parentGuardIndices.length > 0) {
                             firstName = row[parentGuardIndices[0]] ? row[parentGuardIndices[0]].trim() : '';
                         }
@@ -344,7 +367,6 @@
                             lastName = row[parentGuardIndices[1]] ? row[parentGuardIndices[1]].trim() : '';
                         }
 
-                        // Fallback for full name column
                         if (!lastName && !firstName && fullNameIndices.length > 0) {
                             const full = getValue(fullNameIndices, row);
                             if (full) {
@@ -374,8 +396,7 @@
                                     `${firstName} ${lastName}`.toLowerCase(),
                                     `${lastName} ${firstName}`.toLowerCase(),
                                     email
-                                ].filter(Boolean),
-                                rawRow: row
+                                ].filter(Boolean)
                             });
                         }
                     }
@@ -385,6 +406,8 @@
                         return;
                     }
 
+                    saveData(); // Save new upload to browser
+                    
                     fileStatus.textContent = `Loaded ${attendees.length} attendees from ${file.name}`;
                     fileStatus.className = "text-emerald-600 font-medium mt-1";
                     
@@ -404,6 +427,17 @@
             };
 
             reader.readAsText(file);
+        });
+
+        btnClear.addEventListener('click', function() {
+            if (confirm("Are you sure you want to clear all attendees and check-in data? Make sure you have exported your list first!")) {
+                attendees = [];
+                localStorage.removeItem('qrScannerData');
+                fileStatus.textContent = "Upload your event CSV or TXT file to start.";
+                fileStatus.className = "text-gray-500 mt-1";
+                debugBanner.classList.add('hidden');
+                updateView();
+            }
         });
 
         btnExport.addEventListener('click', function() {
@@ -430,24 +464,28 @@
 
         btnWalkin.addEventListener('click', function() {
             initAudio();
-            const lastName = prompt("Enter Last Name:");
-            if (!lastName || !lastName.trim()) return;
-            const firstName = prompt("Enter First Name:") || "";
+            const firstName = prompt("Enter Parent/Guardian First Name:");
+            if (!firstName || !firstName.trim()) return;
             
-            const cleanLast = lastName.trim();
+            const lastName = prompt("Enter Parent/Guardian Last Name (optional):") || "";
+            const email = prompt("Enter Email Address (optional):") || "Walk-in";
+            
             const cleanFirst = firstName.trim();
+            const cleanLast = lastName.trim();
+            const cleanEmail = email.trim();
             
             const newAttendee = {
                 id: Date.now(),
                 lastName: cleanLast,
                 firstName: cleanFirst,
-                email: 'Walk-in',
+                email: cleanEmail,
                 status: 'Checked In',
-                allSearchValues: [cleanLast.toLowerCase(), cleanFirst.toLowerCase(), `${cleanFirst} ${cleanLast}`.toLowerCase(), 'walk-in'],
-                rawRow: [cleanLast, cleanFirst, 'Walk-in', 'Checked In']
+                allSearchValues: [cleanLast.toLowerCase(), cleanFirst.toLowerCase(), `${cleanFirst} ${cleanLast}`.toLowerCase(), cleanEmail.toLowerCase(), 'walk-in']
             };
             attendees.unshift(newAttendee);
-            setAlertState('success', 'Walk-in Registered & Checked In', `${cleanLast}, ${cleanFirst}`);
+            saveData(); // Save new walkin to browser
+            
+            setAlertState('success', 'Walk-in Registered & Checked In', `${cleanLast ? cleanLast + ', ' : ''}${cleanFirst}`);
             playBeep('success');
             updateView();
         });
@@ -540,12 +578,13 @@
 
             if (index >= 0) {
                 const found = attendees[index];
-                const displayName = `${found.lastName}, ${found.firstName}`;
+                const displayName = `${found.lastName ? found.lastName + ', ' : ''}${found.firstName}`;
                 if (found.status === 'Checked In') {
                     playBeep('warning');
                     setAlertState('warning', 'Attendee already checked in!', displayName);
                 } else {
                     found.status = 'Checked In';
+                    saveData(); // Save status change to browser
                     playBeep('success');
                     setAlertState('success', 'Successfully Checked In', displayName);
                     updateView();
@@ -561,8 +600,9 @@
             const attendee = attendees.find(a => a.id === id);
             if (attendee) {
                 attendee.status = 'Checked In';
+                saveData(); // Save status change to browser
                 playBeep('success');
-                setAlertState('success', 'Manually Checked In', `${attendee.lastName}, ${attendee.firstName}`);
+                setAlertState('success', 'Manually Checked In', `${attendee.lastName ? attendee.lastName + ', ' : ''}${attendee.firstName}`);
                 updateView();
             }
         }
@@ -672,10 +712,12 @@
                         ? 'bg-emerald-100 text-emerald-800' 
                         : 'bg-gray-100 text-gray-800';
 
+                    const displayName = `${a.lastName ? a.lastName + ', ' : ''}${a.firstName}`;
+
                     tableHtml += `
                         <tr class="hover:bg-gray-50 transition-colors">
                             <td class="py-3 px-4">
-                                <div class="font-medium text-gray-900">${a.lastName}, ${a.firstName}</div>
+                                <div class="font-medium text-gray-900">${displayName}</div>
                             </td>
                             <td class="py-3 px-4 text-sm text-gray-500">${a.email || '—'}</td>
                             <td class="py-3 px-4">
