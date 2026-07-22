@@ -228,7 +228,7 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // QUALTRICS CSV PARSER (LAST NAME TOP, FIRST NAME BOTTOM)
+        // QUALTRICS CSV PARSER WITH ROBUST DETECTOR
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
@@ -244,7 +244,10 @@
 
             reader.onload = function(evt) {
                 try {
-                    const text = evt.target.result;
+                    let text = evt.target.result;
+                    // Strip UTF-8 BOM
+                    text = text.replace(/^\ufeff/, '');
+
                     const lines = text.split(/\r\n|\n|\r/).map(l => l.trim()).filter(l => l.length > 0);
 
                     if (lines.length === 0) {
@@ -255,17 +258,28 @@
                     // Auto-detect Delimiter
                     const sample = lines[0];
                     let delimiter = ',';
-                    if (sample.includes('\t')) delimiter = '\t';
-                    else if (sample.includes(';') && !sample.includes(',')) delimiter = ';';
+                    const commaCount = (sample.match(/,/g) || []).length;
+                    const tabCount = (sample.match(/\t/g) || []).length;
+                    const semiCount = (sample.match(/;/g) || []).length;
 
-                    function parseLine(lineStr) {
+                    if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+                    else if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
+
+                    function parseCSVLine(lineStr) {
                         let result = [];
                         let cur = '';
                         let inQuotes = false;
                         for (let i = 0; i < lineStr.length; i++) {
                             let char = lineStr[i];
-                            if (char === '"' || char === "'") {
-                                inQuotes = !inQuotes;
+                            let next = lineStr[i + 1];
+
+                            if (char === '"') {
+                                if (inQuotes && next === '"') {
+                                    cur += '"';
+                                    i++; // skip escaped double quote
+                                } else {
+                                    inQuotes = !inQuotes;
+                                }
                             } else if (char === delimiter && !inQuotes) {
                                 result.push(cur.trim().replace(/^["']|["']$/g, ''));
                                 cur = '';
@@ -277,59 +291,133 @@
                         return result;
                     }
 
-                    const rawRows = lines.map(parseLine);
+                    const rawRows = lines.map(parseCSVLine);
 
-                    // Dynamic Column Search
-                    let firstNameIdx = -1;
+                    // Dynamic Column Search across first 5 header rows
                     let lastNameIdx = -1;
+                    let firstNameIdx = -1;
                     let emailIdx = -1;
+                    let fullNameIdx = -1;
 
-                    // Scan first 3 header rows for Qualtrics tag/label mappings
-                    for (let r = 0; r < Math.min(3, rawRows.length); r++) {
+                    for (let r = 0; r < Math.min(5, rawRows.length); r++) {
                         rawRows[r].forEach((col, idx) => {
                             const c = col.toLowerCase().trim();
-                            if (lastNameIdx === -1 && (c.includes('last name') || c.includes('lastname') || c.includes('family') || c.includes('surname') || c === 'q3' || c === 'recipientlastname')) {
+                            if (!c) return;
+
+                            if (lastNameIdx === -1 && (
+                                c.includes('last name') || c.includes('lastname') || c.includes('surname') || 
+                                c.includes('family') || c === 'q3' || c.startsWith('q3_') || c === 'recipientlastname'
+                            )) {
                                 lastNameIdx = idx;
                             }
-                            if (firstNameIdx === -1 && (c.includes('first name') || c.includes('firstname') || c.includes('given') || c === 'q2' || c === 'recipientfirstname')) {
+
+                            if (firstNameIdx === -1 && (
+                                c.includes('first name') || c.includes('firstname') || c.includes('given') || 
+                                c === 'q2' || c.startsWith('q2_') || c === 'recipientfirstname'
+                            )) {
                                 firstNameIdx = idx;
                             }
-                            if (emailIdx === -1 && (c.includes('email') || c.includes('qr_content') || c === 'q5' || c === 'recipientemail')) {
+
+                            if (emailIdx === -1 && (
+                                c.includes('email') || c.includes('e-mail') || c.includes('qr_content') || 
+                                c.includes('mail address') || c === 'q5' || c.startsWith('q5_') || c === 'recipientemail'
+                            )) {
                                 emailIdx = idx;
+                            }
+
+                            if (fullNameIdx === -1 && (
+                                c === 'name' || c.includes('full name') || c.includes('attendee name') || c.includes('parent name')
+                            )) {
+                                fullNameIdx = idx;
                             }
                         });
                     }
 
-                    // Skip Qualtrics header metadata lines (Row 0: QIDs, Row 1: Question text, Row 2: JSON ImportIDs)
-                    let startIndex = 0;
+                    // Fallback email detection: search data rows for '@'
+                    if (emailIdx === -1 && rawRows.length > 1) {
+                        const colScores = {};
+                        for (let r = 0; r < Math.min(15, rawRows.length); r++) {
+                            rawRows[r].forEach((cell, idx) => {
+                                if (cell.includes('@') && cell.includes('.')) {
+                                    colScores[idx] = (colScores[idx] || 0) + 1;
+                                }
+                            });
+                        }
+                        let maxScore = 0;
+                        for (let idx in colScores) {
+                            if (colScores[idx] > maxScore) {
+                                maxScore = colScores[idx];
+                                emailIdx = parseInt(idx);
+                            }
+                        }
+                    }
+
+                    // Fallback name detection if indices missing
+                    if (lastNameIdx === -1 || firstNameIdx === -1) {
+                        if (fullNameIdx === -1 && rawRows.length > 0) {
+                            let textCols = [];
+                            for (let c = 0; c < rawRows[0].length; c++) {
+                                if (c !== emailIdx) textCols.push(c);
+                            }
+                            if (firstNameIdx === -1 && textCols.length > 0) firstNameIdx = textCols[0];
+                            if (lastNameIdx === -1 && textCols.length > 1) lastNameIdx = textCols[1];
+                        }
+                    }
+
+                    // Skip Qualtrics metadata header rows
+                    let dataStartIdx = 0;
                     for (let i = 0; i < Math.min(5, rawRows.length); i++) {
                         const rowStr = rawRows[i].join(' ').toLowerCase();
                         if (
                             rowStr.includes('importid') ||
                             rowStr.includes('responseid') ||
-                            rowStr.includes('recipientfirstname') ||
                             rowStr.includes('startdate') ||
-                            rowStr.includes('ipaddress')
+                            rowStr.includes('ipaddress') ||
+                            (rowStr.includes('recipient') && rowStr.includes('status'))
                         ) {
-                            startIndex = i + 1;
+                            dataStartIdx = i + 1;
                         }
                     }
 
                     attendees = [];
 
-                    for (let i = startIndex; i < rawRows.length; i++) {
+                    for (let i = dataStartIdx; i < rawRows.length; i++) {
                         const row = rawRows[i];
                         if (!row || row.length === 0 || row.every(c => c === '')) continue;
 
-                        // Skip leftover Qualtrics importId JSON rows
-                        if (row.some(cell => cell.includes('{"importId"'))) continue;
+                        // Skip JSON ImportID rows that slipped through
+                        if (row.some(cell => cell.includes('{"importId"') || cell.includes('{"QID'))) continue;
 
-                        const lastName = lastNameIdx !== -1 && row[lastNameIdx] ? row[lastNameIdx].trim() : '';
-                        const firstName = firstNameIdx !== -1 && row[firstNameIdx] ? row[firstNameIdx].trim() : '';
-                        const email = emailIdx !== -1 && row[emailIdx] ? row[emailIdx].trim().toLowerCase() : '';
+                        let lastName = '';
+                        let firstName = '';
+                        let email = emailIdx !== -1 && row[emailIdx] ? row[emailIdx].trim().toLowerCase() : '';
 
-                        // Skip question label rows that were missed
-                        if (lastName.length > 50 || firstName.length > 50 || lastName.toLowerCase().includes('select all')) continue;
+                        if (lastNameIdx !== -1 && row[lastNameIdx]) lastName = row[lastNameIdx].trim();
+                        if (firstNameIdx !== -1 && row[firstNameIdx]) firstName = row[firstNameIdx].trim();
+
+                        // Split Full Name if first/last were separate missing columns
+                        if ((!lastName && !firstName) && fullNameIdx !== -1 && row[fullNameIdx]) {
+                            const parts = row[fullNameIdx].trim().split(/\s+/);
+                            if (parts.length === 1) {
+                                lastName = parts[0];
+                            } else if (parts.length > 1) {
+                                firstName = parts[0];
+                                lastName = parts.slice(1).join(' ');
+                            }
+                        }
+
+                        // Clean quotes
+                        lastName = lastName.replace(/^["']|["']$/g, '');
+                        firstName = firstName.replace(/^["']|["']$/g, '');
+
+                        // Filter leftover question label rows
+                        const combinedLow = (lastName + firstName).toLowerCase();
+                        if (
+                            combinedLow.includes('last name') || 
+                            combinedLow.includes('first name') || 
+                            combinedLow.includes('recipient') ||
+                            combinedLow.includes('importid')
+                        ) continue;
 
                         if (lastName || firstName || email) {
                             attendees.push({
