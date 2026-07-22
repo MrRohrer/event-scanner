@@ -228,7 +228,38 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // QUALTRICS CSV PARSER WITH ROBUST DETECTOR
+        // --- ROBUST CSV PARSER FUNCTION ---
+        // This function properly handles multi-line fields and escaped quotes in CSVs.
+        function csvToArray(strData, strDelimiter){
+            strDelimiter = (strDelimiter || ",");
+            var objPattern = new RegExp(
+                ("(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
+                "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
+                "([^\"\\" + strDelimiter + "\\r\\n]*))"),
+                "gi"
+            );
+            var arrData = [[]];
+            var arrMatches = null;
+            while (arrMatches = objPattern.exec( strData )){
+                var strMatchedDelimiter = arrMatches[ 1 ];
+                if (strMatchedDelimiter.length && strMatchedDelimiter !== strDelimiter){
+                    arrData.push( [] );
+                }
+                var strMatchedValue;
+                if (arrMatches[ 2 ]){
+                    strMatchedValue = arrMatches[ 2 ].replace(new RegExp( "\"\"", "g" ), "\"");
+                } else {
+                    strMatchedValue = arrMatches[ 3 ];
+                }
+                arrData[ arrData.length - 1 ].push( strMatchedValue );
+            }
+            // Remove empty last row if it exists
+            if (arrData.length > 0 && arrData[arrData.length-1].length === 1 && arrData[arrData.length-1][0] === "") {
+                arrData.pop();
+            }
+            return arrData;
+        }
+
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
@@ -245,158 +276,66 @@
             reader.onload = function(evt) {
                 try {
                     let text = evt.target.result;
-                    // Strip UTF-8 BOM
-                    text = text.replace(/^\ufeff/, '');
+                    text = text.replace(/^\ufeff/, ''); // Strip BOM
 
-                    const lines = text.split(/\r\n|\n|\r/).map(l => l.trim()).filter(l => l.length > 0);
+                    // Determine delimiter based on first few lines
+                    let firstLine = text.split('\n')[0] || '';
+                    let delimiter = ',';
+                    if ((firstLine.match(/\t/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = '\t';
+                    
+                    const rawRows = csvToArray(text, delimiter);
 
-                    if (lines.length === 0) {
-                        showDebug(`⚠️ The selected file is empty.`);
+                    if (rawRows.length < 2) {
+                        showDebug(`⚠️ The selected file appears to be empty or improperly formatted.`);
                         return;
                     }
 
-                    // Auto-detect Delimiter
-                    const sample = lines[0];
-                    let delimiter = ',';
-                    const commaCount = (sample.match(/,/g) || []).length;
-                    const tabCount = (sample.match(/\t/g) || []).length;
-                    const semiCount = (sample.match(/;/g) || []).length;
-
-                    if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
-                    else if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
-
-                    function parseCSVLine(lineStr) {
-                        let result = [];
-                        let cur = '';
-                        let inQuotes = false;
-                        for (let i = 0; i < lineStr.length; i++) {
-                            let char = lineStr[i];
-                            let next = lineStr[i + 1];
-
-                            if (char === '"') {
-                                if (inQuotes && next === '"') {
-                                    cur += '"';
-                                    i++; // skip escaped double quote
-                                } else {
-                                    inQuotes = !inQuotes;
-                                }
-                            } else if (char === delimiter && !inQuotes) {
-                                result.push(cur.trim().replace(/^["']|["']$/g, ''));
-                                cur = '';
-                            } else {
-                                cur += char;
-                            }
+                    // --- QUALTRICS ROW SKIPPING ---
+                    // Find the row containing {"ImportId":...} to accurately find where data begins.
+                    let dataStartIdx = 1;
+                    for (let i = 0; i < Math.min(6, rawRows.length); i++) {
+                        const rowStr = rawRows[i].join('').toLowerCase();
+                        if (rowStr.includes('{"importid"') || rowStr.includes('{"qid"')) {
+                            dataStartIdx = i + 1; 
+                            break;
                         }
-                        result.push(cur.trim().replace(/^["']|["']$/g, ''));
-                        return result;
                     }
 
-                    const rawRows = lines.map(parseCSVLine);
+                    // --- COLUMN DETECTION ---
+                    let lastNameIdx = -1, firstNameIdx = -1, emailIdx = -1, fullNameIdx = -1;
 
-                    // Dynamic Column Search across first 5 header rows
-                    let lastNameIdx = -1;
-                    let firstNameIdx = -1;
-                    let emailIdx = -1;
-                    let fullNameIdx = -1;
-
-                    for (let r = 0; r < Math.min(5, rawRows.length); r++) {
+                    // Scan all rows *before* data starts for header names
+                    for (let r = 0; r < dataStartIdx; r++) {
                         rawRows[r].forEach((col, idx) => {
+                            if (!col) return;
                             const c = col.toLowerCase().trim();
-                            if (!c) return;
 
-                            if (lastNameIdx === -1 && (
-                                c.includes('last name') || c.includes('lastname') || c.includes('surname') || 
-                                c.includes('family') || c === 'q3' || c.startsWith('q3_') || c === 'recipientlastname'
-                            )) {
-                                lastNameIdx = idx;
-                            }
-
-                            if (firstNameIdx === -1 && (
-                                c.includes('first name') || c.includes('firstname') || c.includes('given') || 
-                                c === 'q2' || c.startsWith('q2_') || c === 'recipientfirstname'
-                            )) {
-                                firstNameIdx = idx;
-                            }
-
-                            if (emailIdx === -1 && (
-                                c.includes('email') || c.includes('e-mail') || c.includes('qr_content') || 
-                                c.includes('mail address') || c === 'q5' || c.startsWith('q5_') || c === 'recipientemail'
-                            )) {
-                                emailIdx = idx;
-                            }
-
-                            if (fullNameIdx === -1 && (
-                                c === 'name' || c.includes('full name') || c.includes('attendee name') || c.includes('parent name')
-                            )) {
+                            if (lastNameIdx === -1 && (c.includes('last name') || c === 'q3' || c === 'recipientlastname')) lastNameIdx = idx;
+                            if (firstNameIdx === -1 && (c.includes('first name') || c === 'q2' || c === 'recipientfirstname')) firstNameIdx = idx;
+                            if (emailIdx === -1 && (c.includes('email') || c.includes('qr_content') || c === 'q5' || c === 'recipientemail')) emailIdx = idx;
+                            
+                            // Broad fallback for any column asking for a "name" (e.g. "Parent's Name")
+                            if (fullNameIdx === -1 && (c.includes('name') && !c.includes('school') && !c.includes('teacher'))) {
                                 fullNameIdx = idx;
                             }
                         });
-                    }
-
-                    // Fallback email detection: search data rows for '@'
-                    if (emailIdx === -1 && rawRows.length > 1) {
-                        const colScores = {};
-                        for (let r = 0; r < Math.min(15, rawRows.length); r++) {
-                            rawRows[r].forEach((cell, idx) => {
-                                if (cell.includes('@') && cell.includes('.')) {
-                                    colScores[idx] = (colScores[idx] || 0) + 1;
-                                }
-                            });
-                        }
-                        let maxScore = 0;
-                        for (let idx in colScores) {
-                            if (colScores[idx] > maxScore) {
-                                maxScore = colScores[idx];
-                                emailIdx = parseInt(idx);
-                            }
-                        }
-                    }
-
-                    // Fallback name detection if indices missing
-                    if (lastNameIdx === -1 || firstNameIdx === -1) {
-                        if (fullNameIdx === -1 && rawRows.length > 0) {
-                            let textCols = [];
-                            for (let c = 0; c < rawRows[0].length; c++) {
-                                if (c !== emailIdx) textCols.push(c);
-                            }
-                            if (firstNameIdx === -1 && textCols.length > 0) firstNameIdx = textCols[0];
-                            if (lastNameIdx === -1 && textCols.length > 1) lastNameIdx = textCols[1];
-                        }
-                    }
-
-                    // Skip Qualtrics metadata header rows
-                    let dataStartIdx = 0;
-                    for (let i = 0; i < Math.min(5, rawRows.length); i++) {
-                        const rowStr = rawRows[i].join(' ').toLowerCase();
-                        if (
-                            rowStr.includes('importid') ||
-                            rowStr.includes('responseid') ||
-                            rowStr.includes('startdate') ||
-                            rowStr.includes('ipaddress') ||
-                            (rowStr.includes('recipient') && rowStr.includes('status'))
-                        ) {
-                            dataStartIdx = i + 1;
-                        }
                     }
 
                     attendees = [];
 
                     for (let i = dataStartIdx; i < rawRows.length; i++) {
                         const row = rawRows[i];
-                        if (!row || row.length === 0 || row.every(c => c === '')) continue;
-
-                        // Skip JSON ImportID rows that slipped through
-                        if (row.some(cell => cell.includes('{"importId"') || cell.includes('{"QID'))) continue;
+                        if (!row || row.length === 0 || row.every(c => c.trim() === '')) continue;
 
                         let lastName = '';
                         let firstName = '';
-                        let email = emailIdx !== -1 && row[emailIdx] ? row[emailIdx].trim().toLowerCase() : '';
+                        let email = (emailIdx !== -1 && row[emailIdx]) ? row[emailIdx].trim().toLowerCase() : '';
 
                         if (lastNameIdx !== -1 && row[lastNameIdx]) lastName = row[lastNameIdx].trim();
                         if (firstNameIdx !== -1 && row[firstNameIdx]) firstName = row[firstNameIdx].trim();
 
-                        // Split Full Name if first/last were separate missing columns
-                        if ((!lastName && !firstName) && fullNameIdx !== -1 && row[fullNameIdx]) {
+                        // If exact first/last names weren't found, try breaking apart the fallback "Name" column
+                        if (!lastName && !firstName && fullNameIdx !== -1 && row[fullNameIdx]) {
                             const parts = row[fullNameIdx].trim().split(/\s+/);
                             if (parts.length === 1) {
                                 lastName = parts[0];
@@ -406,18 +345,9 @@
                             }
                         }
 
-                        // Clean quotes
-                        lastName = lastName.replace(/^["']|["']$/g, '');
-                        firstName = firstName.replace(/^["']|["']$/g, '');
-
-                        // Filter leftover question label rows
+                        // Skip rows that look like accidental header duplicates
                         const combinedLow = (lastName + firstName).toLowerCase();
-                        if (
-                            combinedLow.includes('last name') || 
-                            combinedLow.includes('first name') || 
-                            combinedLow.includes('recipient') ||
-                            combinedLow.includes('importid')
-                        ) continue;
+                        if (combinedLow.includes('last name') || combinedLow.includes('importid') || combinedLow.includes('{"')) continue;
 
                         if (lastName || firstName || email) {
                             attendees.push({
@@ -439,7 +369,7 @@
                     }
 
                     if (attendees.length === 0) {
-                        showDebug(`⚠️ Could not find any valid attendee rows in ${file.name}.`);
+                        showDebug(`⚠️ Could not find any valid attendee rows in ${file.name}. Please ensure the file contains data.`);
                         return;
                     }
 
