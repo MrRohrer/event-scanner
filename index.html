@@ -228,7 +228,7 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // Native CSV/TXT Parser
+        // QUALTRICS CSV PARSER (LAST NAME TOP, FIRST NAME BOTTOM)
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
@@ -259,36 +259,95 @@
                     else if (sample.includes(';') && !sample.includes(',')) delimiter = ';';
 
                     function parseLine(lineStr) {
-                        return lineStr.split(delimiter).map(cell => cell.replace(/^["']|["']$/g, '').trim());
+                        let result = [];
+                        let cur = '';
+                        let inQuotes = false;
+                        for (let i = 0; i < lineStr.length; i++) {
+                            let char = lineStr[i];
+                            if (char === '"' || char === "'") {
+                                inQuotes = !inQuotes;
+                            } else if (char === delimiter && !inQuotes) {
+                                result.push(cur.trim().replace(/^["']|["']$/g, ''));
+                                cur = '';
+                            } else {
+                                cur += char;
+                            }
+                        }
+                        result.push(cur.trim().replace(/^["']|["']$/g, ''));
+                        return result;
                     }
 
                     const rawRows = lines.map(parseLine);
-                    const firstRow = rawRows[0];
 
-                    let hasHeader = true;
-                    if (rawRows.length > 1) {
-                        hasHeader = firstRow.some(cell => isNaN(cell) && !cell.includes('@'));
+                    // Dynamic Column Search
+                    let firstNameIdx = -1;
+                    let lastNameIdx = -1;
+                    let emailIdx = -1;
+
+                    // Scan first 3 header rows for Qualtrics tag/label mappings
+                    for (let r = 0; r < Math.min(3, rawRows.length); r++) {
+                        rawRows[r].forEach((col, idx) => {
+                            const c = col.toLowerCase().trim();
+                            if (lastNameIdx === -1 && (c.includes('last name') || c.includes('lastname') || c.includes('family') || c.includes('surname') || c === 'q3' || c === 'recipientlastname')) {
+                                lastNameIdx = idx;
+                            }
+                            if (firstNameIdx === -1 && (c.includes('first name') || c.includes('firstname') || c.includes('given') || c === 'q2' || c === 'recipientfirstname')) {
+                                firstNameIdx = idx;
+                            }
+                            if (emailIdx === -1 && (c.includes('email') || c.includes('qr_content') || c === 'q5' || c === 'recipientemail')) {
+                                emailIdx = idx;
+                            }
+                        });
                     }
 
-                    const startIndex = hasHeader ? 1 : 0;
+                    // Skip Qualtrics header metadata lines (Row 0: QIDs, Row 1: Question text, Row 2: JSON ImportIDs)
+                    let startIndex = 0;
+                    for (let i = 0; i < Math.min(5, rawRows.length); i++) {
+                        const rowStr = rawRows[i].join(' ').toLowerCase();
+                        if (
+                            rowStr.includes('importid') ||
+                            rowStr.includes('responseid') ||
+                            rowStr.includes('recipientfirstname') ||
+                            rowStr.includes('startdate') ||
+                            rowStr.includes('ipaddress')
+                        ) {
+                            startIndex = i + 1;
+                        }
+                    }
+
                     attendees = [];
 
                     for (let i = startIndex; i < rawRows.length; i++) {
                         const row = rawRows[i];
                         if (!row || row.length === 0 || row.every(c => c === '')) continue;
 
-                        const primary = row[0] || `Attendee #${i + 1}`;
-                        const secondary = row[1] || '';
+                        // Skip leftover Qualtrics importId JSON rows
+                        if (row.some(cell => cell.includes('{"importId"'))) continue;
 
-                        attendees.push({
-                            id: i + Date.now(),
-                            primary: primary,
-                            secondary: secondary,
-                            status: 'Registered',
-                            // Sanitize cell values for search matching
-                            allSearchValues: row.map(cell => cell.toLowerCase().replace(/^mailto:/, '').trim()).filter(c => c.length > 0),
-                            rawRow: row
-                        });
+                        const lastName = lastNameIdx !== -1 && row[lastNameIdx] ? row[lastNameIdx].trim() : '';
+                        const firstName = firstNameIdx !== -1 && row[firstNameIdx] ? row[firstNameIdx].trim() : '';
+                        const email = emailIdx !== -1 && row[emailIdx] ? row[emailIdx].trim().toLowerCase() : '';
+
+                        // Skip question label rows that were missed
+                        if (lastName.length > 50 || firstName.length > 50 || lastName.toLowerCase().includes('select all')) continue;
+
+                        if (lastName || firstName || email) {
+                            attendees.push({
+                                id: i + Date.now(),
+                                lastName: lastName || '—',
+                                firstName: firstName || '—',
+                                email: email,
+                                status: 'Registered',
+                                allSearchValues: [
+                                    lastName.toLowerCase(),
+                                    firstName.toLowerCase(),
+                                    `${firstName} ${lastName}`.toLowerCase(),
+                                    `${lastName} ${firstName}`.toLowerCase(),
+                                    email.toLowerCase()
+                                ].filter(Boolean),
+                                rawRow: row
+                            });
+                        }
                     }
 
                     if (attendees.length === 0) {
@@ -321,9 +380,9 @@
         btnExport.addEventListener('click', function() {
             if (attendees.length === 0) return;
             
-            let csvContent = "data:text/csv;charset=utf-8,Identifier,Secondary,Status\n";
+            let csvContent = "data:text/csv;charset=utf-8,Last Name,First Name,Email,Status\n";
             attendees.forEach(a => {
-                csvContent += `"${a.primary.replace(/"/g, '""')}","${a.secondary.replace(/"/g, '""')}","${a.status}"\n`;
+                csvContent += `"${a.lastName.replace(/"/g, '""')}","${a.firstName.replace(/"/g, '""')}","${a.email.replace(/"/g, '""')}","${a.status}"\n`;
             });
             
             const encodedUri = encodeURI(csvContent);
@@ -342,22 +401,26 @@
 
         btnWalkin.addEventListener('click', function() {
             initAudio();
-            const name = prompt("Enter walk-in Name or Identifier:");
-            if (name && name.trim() !== '') {
-                const cleanName = name.trim();
-                const newAttendee = {
-                    id: Date.now(),
-                    primary: cleanName,
-                    secondary: 'Walk-in',
-                    status: 'Checked In',
-                    allSearchValues: [cleanName.toLowerCase(), 'walk-in'],
-                    rawRow: [cleanName, 'Walk-in', 'Checked In']
-                };
-                attendees.unshift(newAttendee);
-                setAlertState('success', 'Walk-in Registered & Checked In', cleanName);
-                playBeep('success');
-                updateView();
-            }
+            const lastName = prompt("Enter Last Name:");
+            if (!lastName || !lastName.trim()) return;
+            const firstName = prompt("Enter First Name:") || "";
+            
+            const cleanLast = lastName.trim();
+            const cleanFirst = firstName.trim();
+            
+            const newAttendee = {
+                id: Date.now(),
+                lastName: cleanLast,
+                firstName: cleanFirst,
+                email: 'Walk-in',
+                status: 'Checked In',
+                allSearchValues: [cleanLast.toLowerCase(), cleanFirst.toLowerCase(), `${cleanFirst} ${cleanLast}`.toLowerCase(), 'walk-in'],
+                rawRow: [cleanLast, cleanFirst, 'Walk-in', 'Checked In']
+            };
+            attendees.unshift(newAttendee);
+            setAlertState('success', 'Walk-in Registered & Checked In', `${cleanLast}, ${cleanFirst}`);
+            playBeep('success');
+            updateView();
         });
 
         btnToggleScanner.addEventListener('click', async function() {
@@ -427,45 +490,38 @@
             }
         });
 
-        // STRICT SCAN PROCESSOR (Prevents false positive matches)
+        // SCAN PROCESSOR
         function processScan(scannedText) {
             const now = Date.now();
             if (now - lastScanTime < 2500 && lastScanText === scannedText) return;
             lastScanTime = now;
             lastScanText = scannedText;
 
-            // Strip mailto:, url query parameters, and leading/trailing whitespace
-            let cleanScan = scannedText.toLowerCase()
-                .replace(/^mailto:/, '')
-                .trim();
-
+            let cleanScan = scannedText.toLowerCase().replace(/^mailto:/, '').trim();
             if (!cleanScan) return;
 
-            // STEP 1: EXACT MATCH (Safest & most accurate)
+            // Step 1: Exact Match
             let index = attendees.findIndex(a => 
                 a.allSearchValues.some(val => val === cleanScan)
             );
 
-            // STEP 2: SUBSTRING MATCH (Only for URLs containing a long identifier like an email >= 6 chars)
+            // Step 2: Substring Match
             if (index === -1) {
                 index = attendees.findIndex(a => 
-                    a.allSearchValues.some(val => {
-                        // Ignore short words/numbers (e.g. "OH", "com", "43") to prevent false positives
-                        if (val.length < 6) return false;
-                        return cleanScan.includes(val);
-                    })
+                    a.allSearchValues.some(val => val.length >= 5 && cleanScan.includes(val))
                 );
             }
 
             if (index >= 0) {
                 const found = attendees[index];
+                const displayName = `${found.lastName}, ${found.firstName}`;
                 if (found.status === 'Checked In') {
                     playBeep('warning');
-                    setAlertState('warning', 'Attendee already checked in!', found.primary);
+                    setAlertState('warning', 'Attendee already checked in!', displayName);
                 } else {
                     found.status = 'Checked In';
                     playBeep('success');
-                    setAlertState('success', 'Successfully Checked In', found.primary);
+                    setAlertState('success', 'Successfully Checked In', displayName);
                     updateView();
                 }
             } else {
@@ -480,7 +536,7 @@
             if (attendee) {
                 attendee.status = 'Checked In';
                 playBeep('success');
-                setAlertState('success', 'Manually Checked In', attendee.primary);
+                setAlertState('success', 'Manually Checked In', `${attendee.lastName}, ${attendee.firstName}`);
                 updateView();
             }
         }
@@ -572,7 +628,7 @@
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-24">Action</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-gray-100 bg-white">
             `;
 
             if (filtered.length === 0) {
@@ -585,8 +641,9 @@
                 `;
             } else {
                 filtered.forEach(attendee => {
-                    const statusClass = attendee.status === 'Checked In' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800';
-                    const actionButton = attendee.status !== 'Checked In' 
+                    const isCheckedIn = attendee.status === 'Checked In';
+                    const statusClass = isCheckedIn ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800';
+                    const actionButton = !isCheckedIn 
                         ? `<button onclick="manualCheckIn(${attendee.id})" class="inline-flex items-center justify-center p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Manual Check-In">
                                <i class="fa-solid fa-user-check text-lg"></i>
                            </button>` 
@@ -595,15 +652,22 @@
                     tableHtml += `
                         <tr class="hover:bg-gray-50 transition-colors">
                             <td class="py-3 px-4">
-                                <div class="font-medium text-gray-900">${attendee.primary}</div>
-                                ${attendee.secondary ? `<div class="text-xs text-gray-500 mt-0.5">${attendee.secondary}</div>` : ''}
+                                <!-- LAST NAME TOP -->
+                                <div class="font-bold text-gray-900 text-base leading-tight">
+                                    ${attendee.lastName}
+                                </div>
+                                <!-- FIRST NAME BOTTOM -->
+                                <div class="text-sm font-medium text-gray-500">
+                                    ${attendee.firstName}
+                                </div>
+                                ${attendee.email ? `<div class="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">${attendee.email}</div>` : ''}
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="py-3 px-4 w-32">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
                                     ${attendee.status}
                                 </span>
                             </td>
-                            <td class="py-3 px-4 text-right">
+                            <td class="py-3 px-4 text-right w-24">
                                 ${actionButton}
                             </td>
                         </tr>
