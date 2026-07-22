@@ -4,15 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registration QR Scanner</title>
+    <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for clean icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Html5Qrcode for camera scanning -->
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- PapaParse for reading/writing CSVs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body class="min-h-screen bg-gray-100 text-gray-800 font-sans p-4 md:p-8">
 
     <div class="max-w-7xl mx-auto space-y-6">
         
+        <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
             <div>
                 <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Registration Scanner</h1>
@@ -35,10 +40,13 @@
             </div>
         </header>
 
+        <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
+            <!-- Left Column: Scanner & Status Box -->
             <div class="lg:col-span-5 space-y-6">
                 
+                <!-- Scan Result Alert Box -->
                 <div id="alert-box" class="p-6 rounded-2xl shadow-sm border bg-white border-gray-200 transition-all duration-300">
                     <div id="alert-content" class="flex flex-col items-center text-center space-y-3">
                         <i class="fa-solid fa-camera text-4xl text-gray-300"></i>
@@ -47,15 +55,24 @@
                     </div>
                 </div>
 
+                <!-- Scanner Container -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-                    <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <div class="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-3 sm:items-center justify-between bg-gray-50">
                         <h2 class="font-semibold text-gray-700 flex items-center gap-2">
                             <i class="fa-solid fa-qrcode"></i>
                             QR Scanner
                         </h2>
-                        <button id="btn-toggle-scanner" class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-                            <i class="fa-solid fa-camera"></i> <span id="scanner-btn-text">Start Scanner</span>
-                        </button>
+                        
+                        <div class="flex items-center gap-2">
+                            <!-- Camera Dropdown -->
+                            <select id="camera-select" class="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px] truncate">
+                                <option value="">Detecting cameras...</option>
+                            </select>
+
+                            <button id="btn-toggle-scanner" class="px-4 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
+                                <i class="fa-solid fa-camera"></i> <span id="scanner-btn-text">Start Scanner</span>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="p-4 bg-black relative">
@@ -63,7 +80,7 @@
                         <div id="reader" class="w-full bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center">
                             <div id="reader-placeholder" class="text-gray-500 text-center p-6">
                                 <i class="fa-solid fa-video-slash text-4xl mx-auto mb-3 opacity-50 block"></i>
-                                <p>Camera is off. Click "Start Scanner" to begin checking people in.</p>
+                                <p>Camera is off. Select a camera and click "Start Scanner".</p>
                             </div>
                         </div>
                     </div>
@@ -71,8 +88,10 @@
 
             </div>
 
+            <!-- Right Column: List & Stats -->
             <div class="lg:col-span-7 space-y-6">
                 
+                <!-- Stats Row -->
                 <div class="grid grid-cols-3 gap-4">
                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center justify-center text-center">
                         <span class="text-sm font-medium text-gray-500">Total Registered</span>
@@ -88,6 +107,7 @@
                     </div>
                 </div>
 
+                <!-- Attendee List -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[600px]">
                     <div class="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-4">
                         <h2 class="font-semibold text-gray-700">Attendee List</h2>
@@ -103,6 +123,7 @@
                     </div>
                     
                     <div class="flex-1 overflow-auto" id="table-container">
+                        <!-- Table or Empty State -->
                         <div class="flex flex-col items-center justify-center h-full text-gray-400 p-8 text-center">
                             <i class="fa-solid fa-cloud-arrow-up text-4xl mb-4 opacity-30"></i>
                             <p class="text-lg font-medium text-gray-600">No attendees loaded</p>
@@ -115,6 +136,7 @@
         </div>
     </div>
 
+    <!-- Application JavaScript Logic -->
     <script>
         // State management
         let attendees = [];
@@ -131,6 +153,7 @@
         const btnWalkin = document.getElementById('btn-walkin');
         const btnToggleScanner = document.getElementById('btn-toggle-scanner');
         const scannerBtnText = document.getElementById('scanner-btn-text');
+        const cameraSelect = document.getElementById('camera-select');
         const readerPlaceholder = document.getElementById('reader-placeholder');
         const cameraError = document.getElementById('camera-error');
         const searchInput = document.getElementById('search-input');
@@ -143,7 +166,32 @@
         const statCheckedIn = document.getElementById('stat-checked-in');
         const statRemaining = document.getElementById('stat-remaining');
 
-        // Audio initialization (bypasses browser autoplay restrictions)
+        // Fetch connected cameras and populate dropdown
+        async function populateCameraList() {
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                cameraSelect.innerHTML = '';
+                
+                if (devices && devices.length > 0) {
+                    devices.forEach((device, index) => {
+                        const option = document.createElement('option');
+                        option.value = device.id;
+                        option.textContent = device.label || `Camera ${index + 1}`;
+                        cameraSelect.appendChild(option);
+                    });
+                } else {
+                    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                }
+            } catch (err) {
+                console.error("Camera detection error:", err);
+                cameraSelect.innerHTML = '<option value="">Default Camera</option>';
+            }
+        }
+
+        // Initialize camera list on load
+        window.addEventListener('DOMContentLoaded', populateCameraList);
+
+        // Audio initialization
         function initAudio() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -197,7 +245,6 @@
                         };
                     }).filter(r => r.email);
 
-                    // Reset alert and update view
                     resetAlertBox();
                     updateView();
                 }
@@ -263,16 +310,22 @@
             readerPlaceholder.classList.add('hidden');
             html5QrCode = new Html5Qrcode("reader");
             
+            const selectedCameraId = cameraSelect.value;
+            const cameraConfig = selectedCameraId ? selectedCameraId : { facingMode: "environment" };
+
             try {
                 await html5QrCode.start(
-                    { facingMode: "environment" },
+                    cameraConfig,
                     { fps: 10, qrbox: { width: 250, height: 250 } },
                     (decodedText) => {
                         processScan(decodedText.trim());
                     },
-                    (errorMessage) => { /* Normal background noise reading error, ignore */ }
+                    (errorMessage) => { /* Normal background noise, ignore */ }
                 );
                 
+                // Refresh list labels now that permissions are granted
+                populateCameraList();
+
                 isScannerRunning = true;
                 scannerBtnText.textContent = "Stop Scanner";
                 btnToggleScanner.classList.replace('bg-blue-600', 'bg-red-100');
@@ -280,7 +333,7 @@
                 btnToggleScanner.classList.add('hover:bg-red-200');
             } catch (err) {
                 console.error(err);
-                cameraError.textContent = 'Could not start camera. Please verify you have given the page camera permissions.';
+                cameraError.textContent = 'Could not start camera. Please verify camera permissions.';
                 cameraError.classList.remove('hidden');
                 readerPlaceholder.classList.remove('hidden');
             }
@@ -303,10 +356,17 @@
             readerPlaceholder.classList.remove('hidden');
         }
 
+        // Switch camera dynamically if changed while running
+        cameraSelect.addEventListener('change', async function() {
+            if (isScannerRunning) {
+                await stopScanner();
+                await startScanner();
+            }
+        });
+
         // Process Code Scan
         function processScan(scannedEmail) {
             const now = Date.now();
-            // Prevent duplicate scanning of the same email within 2.5 seconds
             if (now - lastScanTime < 2500 && lastScanText === scannedEmail) {
                 return;
             }
