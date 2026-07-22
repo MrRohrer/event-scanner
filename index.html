@@ -297,8 +297,12 @@
                         }
                     }
 
-                    // --- COLUMN DETECTION ---
-                    let lastNameIdx = -1, firstNameIdx = -1, emailIdx = -1, fullNameIdx = -1;
+                    // --- NEW MULTI-MATCH COLUMN DETECTION ---
+                    let lastNameIndices = [];
+                    let firstNameIndices = [];
+                    let emailIndices = [];
+                    let parentGuardIndices = [];
+                    let fullNameIndices = [];
 
                     // Scan all rows *before* data starts for header names
                     for (let r = 0; r < dataStartIdx; r++) {
@@ -306,38 +310,51 @@
                             if (!col) return;
                             const c = col.toLowerCase().trim();
 
-                            // Broadened search terms to catch more variations
-                            if (lastNameIdx === -1 && (c.includes('last') || c === 'q3' || c.includes('recipientlastname'))) lastNameIdx = idx;
-                            if (firstNameIdx === -1 && (c.includes('first') || c === 'q2' || c.includes('recipientfirstname'))) firstNameIdx = idx;
-                            if (emailIdx === -1 && (c.includes('email') || c.includes('qr') || c === 'q5' || c.includes('recipientemail'))) emailIdx = idx;
-                            
-                            // Broad fallback for any column asking for a "name"
-                            if (fullNameIdx === -1 && (c.includes('name') && !c.includes('school') && !c.includes('teacher'))) {
-                                fullNameIdx = idx;
-                            }
+                            if (c.includes('last') || c === 'q3' || c.includes('recipientlastname')) lastNameIndices.push(idx);
+                            if (c.includes('first') || c === 'q2' || c.includes('recipientfirstname')) firstNameIndices.push(idx);
+                            if (c.includes('email') || c.includes('qr') || c === 'q5' || c.includes('recipientemail')) emailIndices.push(idx);
+                            if (c.includes('parent/guard')) parentGuardIndices.push(idx);
+                            if (c.includes('name') && !c.includes('school') && !c.includes('teacher') && !c.includes('first') && !c.includes('last')) fullNameIndices.push(idx);
                         });
                     }
 
                     attendees = [];
 
+                    // Helper function: check all possible index columns for a value and return the first one that isn't blank
+                    const getValue = (indices, row) => {
+                        for (let idx of indices) {
+                            if (row[idx] && row[idx].trim() !== '') return row[idx].trim();
+                        }
+                        return '';
+                    };
+
                     for (let i = dataStartIdx; i < rawRows.length; i++) {
                         const row = rawRows[i];
-                        if (!row || row.length === 0 || row.every(c => c.trim() === '')) continue;
+                        if (!row || row.length === 0 || row.every(c => !c || c.trim() === '')) continue;
 
-                        let lastName = '';
-                        let firstName = '';
-                        let email = (emailIdx !== -1 && row[emailIdx]) ? row[emailIdx].trim().toLowerCase() : '';
+                        let lastName = getValue(lastNameIndices, row);
+                        let firstName = getValue(firstNameIndices, row);
+                        let email = getValue(emailIndices, row).toLowerCase();
 
-                        if (lastNameIdx !== -1 && row[lastNameIdx]) lastName = row[lastNameIdx].trim();
-                        if (firstNameIdx !== -1 && row[firstNameIdx]) firstName = row[firstNameIdx].trim();
+                        // Fallback for Parent/Guardian generic columns if the explicit First/Last wasn't found
+                        if (!firstName && parentGuardIndices.length > 0) {
+                            firstName = row[parentGuardIndices[0]] ? row[parentGuardIndices[0]].trim() : '';
+                        }
+                        if (!lastName && parentGuardIndices.length > 1) {
+                            lastName = row[parentGuardIndices[1]] ? row[parentGuardIndices[1]].trim() : '';
+                        }
 
-                        if (!lastName && !firstName && fullNameIdx !== -1 && row[fullNameIdx]) {
-                            const parts = row[fullNameIdx].trim().split(/\s+/);
-                            if (parts.length === 1) {
-                                lastName = parts[0];
-                            } else if (parts.length > 1) {
-                                firstName = parts[0];
-                                lastName = parts.slice(1).join(' ');
+                        // Fallback for full name column
+                        if (!lastName && !firstName && fullNameIndices.length > 0) {
+                            const full = getValue(fullNameIndices, row);
+                            if (full) {
+                                const parts = full.split(/\s+/);
+                                if (parts.length === 1) {
+                                    lastName = parts[0];
+                                } else if (parts.length > 1) {
+                                    firstName = parts[0];
+                                    lastName = parts.slice(1).join(' ');
+                                }
                             }
                         }
 
@@ -356,7 +373,7 @@
                                     firstName.toLowerCase(),
                                     `${firstName} ${lastName}`.toLowerCase(),
                                     `${lastName} ${firstName}`.toLowerCase(),
-                                    email.toLowerCase()
+                                    email
                                 ].filter(Boolean),
                                 rawRow: row
                             });
