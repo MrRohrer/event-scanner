@@ -21,12 +21,12 @@
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
             <div>
                 <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Registration Scanner</h1>
-                <p class="text-gray-500 mt-1">Scan QR codes to track event check-ins.</p>
+                <p class="text-gray-500 mt-1" id="file-status">Upload your event CSV to start scanning.</p>
             </div>
             <div class="mt-4 md:mt-0 flex flex-wrap gap-3">
-                <label class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm cursor-pointer hover:bg-gray-50 transition-colors">
-                    <i class="fa-solid fa-upload text-gray-600"></i>
-                    <span class="text-sm font-medium">Upload CSV</span>
+                <label class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm cursor-pointer hover:bg-blue-700 transition-colors font-medium">
+                    <i class="fa-solid fa-upload"></i>
+                    <span class="text-sm">Upload CSV</span>
                     <input type="file" id="csv-file" accept=".csv" class="hidden" />
                 </label>
                 <button id="btn-export" disabled class="flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm font-medium transition-colors bg-gray-200 text-gray-400 cursor-not-allowed">
@@ -116,7 +116,7 @@
                             <input
                                 type="text"
                                 id="search-input"
-                                placeholder="Search email..."
+                                placeholder="Search attendee..."
                                 class="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             />
                         </div>
@@ -146,9 +146,11 @@
         let searchTerm = '';
         let lastScanText = '';
         let lastScanTime = 0;
+        let detectedHeaders = [];
 
         // Elements
         const csvFileInput = document.getElementById('csv-file');
+        const fileStatus = document.getElementById('file-status');
         const btnExport = document.getElementById('btn-export');
         const btnWalkin = document.getElementById('btn-walkin');
         const btnToggleScanner = document.getElementById('btn-toggle-scanner');
@@ -188,7 +190,6 @@
             }
         }
 
-        // Initialize camera list on load
         window.addEventListener('DOMContentLoaded', populateCameraList);
 
         // Audio initialization
@@ -223,30 +224,63 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // CSV parsing
+        // CSV parsing (Universal handling)
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
             if (!file) return;
 
+            // Excel Guardrail Check
+            if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+                alert("⚠️ Incorrect File Format!\n\nPlease save your file as 'CSV (Comma delimited)' in Excel before uploading.");
+                csvFileInput.value = '';
+                return;
+            }
+
             Papa.parse(file, {
                 header: true,
-                skipEmptyLines: true,
+                skipEmptyLines: 'greedy',
+                transformHeader: function(header) {
+                    return header.replace(/^\uFEFF/, '').trim();
+                },
                 complete: function(results) {
+                    if (!results.data || results.data.length === 0) {
+                        alert("The uploaded CSV file is empty.");
+                        return;
+                    }
+
+                    detectedHeaders = results.meta.fields || [];
+
                     attendees = results.data.map((row, index) => {
-                        const emailKey = Object.keys(row).find(k => k.toLowerCase() === 'email');
-                        const statusKey = Object.keys(row).find(k => k.toLowerCase() === 'status');
+                        const keys = Object.keys(row);
                         
+                        // Extract row values
+                        const values = keys.map(k => String(row[k] || '').trim()).filter(Boolean);
+                        
+                        // Pick first two values for visual display in table
+                        const displayPrimary = values[0] || `Attendee #${index + 1}`;
+                        const displaySecondary = values[1] || '';
+
+                        // Look for optional status column
+                        const statusKey = keys.find(k => k.toLowerCase().includes('status'));
+                        const rawStatus = statusKey ? row[statusKey] : '';
+
                         return {
-                            id: index + Date.now(),
-                            email: emailKey ? row[emailKey].trim() : '',
-                            status: (statusKey ? row[statusKey].trim() : 'Registered') || 'Registered',
+                            id: index + Date.now() + index,
+                            primary: displayPrimary,
+                            secondary: displaySecondary,
+                            status: (rawStatus && String(rawStatus).trim()) ? String(rawStatus).trim() : 'Registered',
+                            allSearchValues: values.map(v => v.toLowerCase()),
                             originalRow: row
                         };
-                    }).filter(r => r.email);
+                    });
+
+                    fileStatus.textContent = `Loaded ${attendees.length} attendees from ${file.name}`;
+                    fileStatus.className = "text-emerald-600 font-medium mt-1";
 
                     resetAlertBox();
                     updateView();
+                    csvFileInput.value = '';
                 }
             });
         });
@@ -257,7 +291,6 @@
             
             const exportData = attendees.map(a => ({
                 ...a.originalRow,
-                Email: a.email,
                 Status: a.status
             }));
             
@@ -278,17 +311,19 @@
         // Walk-in Registration
         btnWalkin.addEventListener('click', function() {
             initAudio();
-            const email = prompt("Enter walk-in email address:");
-            if (email && email.trim() !== '') {
-                const cleanEmail = email.trim();
+            const name = prompt("Enter walk-in Name or Identifier:");
+            if (name && name.trim() !== '') {
+                const cleanName = name.trim();
                 const newAttendee = {
                     id: Date.now(),
-                    email: cleanEmail,
+                    primary: cleanName,
+                    secondary: 'Walk-in',
                     status: 'Checked In',
-                    originalRow: { Email: cleanEmail, Status: 'Checked In' }
+                    allSearchValues: [cleanName.toLowerCase(), 'walk-in'],
+                    originalRow: { Name: cleanName, Status: 'Checked In' }
                 };
                 attendees.unshift(newAttendee);
-                setAlertState('success', 'Walk-in Registered & Checked In', cleanEmail);
+                setAlertState('success', 'Walk-in Registered & Checked In', cleanName);
                 playBeep('success');
                 updateView();
             }
@@ -320,10 +355,9 @@
                     (decodedText) => {
                         processScan(decodedText.trim());
                     },
-                    (errorMessage) => { /* Normal background noise, ignore */ }
+                    (errorMessage) => { /* Background frame noise */ }
                 );
                 
-                // Refresh list labels now that permissions are granted
                 populateCameraList();
 
                 isScannerRunning = true;
@@ -356,7 +390,6 @@
             readerPlaceholder.classList.remove('hidden');
         }
 
-        // Switch camera dynamically if changed while running
         cameraSelect.addEventListener('change', async function() {
             if (isScannerRunning) {
                 await stopScanner();
@@ -364,30 +397,36 @@
             }
         });
 
-        // Process Code Scan
-        function processScan(scannedEmail) {
+        // Universal Scan Processor (Matches scanned text against ANY column value)
+        function processScan(scannedText) {
             const now = Date.now();
-            if (now - lastScanTime < 2500 && lastScanText === scannedEmail) {
+            if (now - lastScanTime < 2500 && lastScanText === scannedText) {
                 return;
             }
             lastScanTime = now;
-            lastScanText = scannedEmail;
+            lastScanText = scannedText;
 
-            const index = attendees.findIndex(a => a.email.toLowerCase() === scannedEmail.toLowerCase());
+            const cleanScan = scannedText.toLowerCase();
+
+            // Find match in any column of any row
+            const index = attendees.findIndex(a => 
+                a.allSearchValues.some(val => val === cleanScan || cleanScan.includes(val) || val.includes(cleanScan))
+            );
 
             if (index >= 0) {
-                if (attendees[index].status === 'Checked In') {
+                const found = attendees[index];
+                if (found.status === 'Checked In') {
                     playBeep('warning');
-                    setAlertState('warning', 'Attendee already checked in!', scannedEmail);
+                    setAlertState('warning', 'Attendee already checked in!', found.primary);
                 } else {
-                    attendees[index].status = 'Checked In';
+                    found.status = 'Checked In';
                     playBeep('success');
-                    setAlertState('success', 'Successfully Checked In', scannedEmail);
+                    setAlertState('success', 'Successfully Checked In', found.primary);
                     updateView();
                 }
             } else {
                 playBeep('error');
-                setAlertState('error', 'NOT REGISTERED! Send to registration table.', scannedEmail);
+                setAlertState('error', 'NOT REGISTERED! Send to registration table.', scannedText);
             }
         }
 
@@ -397,12 +436,11 @@
             if (attendee) {
                 attendee.status = 'Checked In';
                 playBeep('success');
-                setAlertState('success', 'Manually Checked In', attendee.email);
+                setAlertState('success', 'Manually Checked In', attendee.primary);
                 updateView();
             }
         }
 
-        // Alert Box UI manipulation
         function resetAlertBox() {
             alertBox.className = "p-6 rounded-2xl shadow-sm border bg-white border-gray-200 transition-all duration-300";
             alertContent.innerHTML = `
@@ -440,7 +478,6 @@
             `;
         }
 
-        // View updates
         function updateView() {
             renderStats();
             renderTable();
@@ -476,16 +513,17 @@
                 return;
             }
 
+            const cleanSearch = searchTerm.toLowerCase();
             const filtered = attendees.filter(a => 
-                a.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                a.status.toLowerCase().includes(searchTerm.toLowerCase())
+                a.allSearchValues.some(v => v.includes(cleanSearch)) || 
+                a.status.toLowerCase().includes(cleanSearch)
             );
 
             let tableHtml = `
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-white sticky top-0 shadow-sm z-10">
                         <tr>
-                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendee Info</th>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-24">Action</th>
                         </tr>
@@ -513,7 +551,8 @@
                     tableHtml += `
                         <tr class="hover:bg-gray-50 transition-colors">
                             <td class="py-3 px-4">
-                                <span class="font-medium text-gray-900">${attendee.email}</span>
+                                <div class="font-medium text-gray-900">${attendee.primary}</div>
+                                ${attendee.secondary ? `<div class="text-xs text-gray-500 mt-0.5">${attendee.secondary}</div>` : ''}
                             </td>
                             <td class="py-3 px-4">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
