@@ -4,14 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registration QR Scanner</title>
-    <!-- Tailwind CSS for styling -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome for clean icons -->
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Html5Qrcode for camera scanning -->
+    <!-- Camera Scanner Library -->
     <script src="https://unpkg.com/html5-qrcode"></script>
-    <!-- PapaParse for reading/writing CSVs -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body class="min-h-screen bg-gray-100 text-gray-800 font-sans p-4 md:p-8">
 
@@ -21,13 +19,13 @@
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
             <div>
                 <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Registration Scanner</h1>
-                <p class="text-gray-500 mt-1" id="file-status">Upload your event CSV to start scanning.</p>
+                <p class="text-gray-500 mt-1" id="file-status">Upload your event CSV or TXT file to start.</p>
             </div>
             <div class="mt-4 md:mt-0 flex flex-wrap gap-3">
                 <label class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm cursor-pointer hover:bg-blue-700 transition-colors font-medium">
                     <i class="fa-solid fa-upload"></i>
-                    <span class="text-sm">Upload CSV</span>
-                    <input type="file" id="csv-file" accept=".csv" class="hidden" />
+                    <span class="text-sm">Upload File</span>
+                    <input type="file" id="csv-file" accept=".csv, .txt, .tsv" class="hidden" />
                 </label>
                 <button id="btn-export" disabled class="flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm font-medium transition-colors bg-gray-200 text-gray-400 cursor-not-allowed">
                     <i class="fa-solid fa-download"></i>
@@ -39,6 +37,9 @@
                 </button>
             </div>
         </header>
+
+        <!-- Debug / Error Notification Banner -->
+        <div id="debug-banner" class="hidden p-4 rounded-xl text-sm font-medium border"></div>
 
         <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -64,7 +65,6 @@
                         </h2>
                         
                         <div class="flex items-center gap-2">
-                            <!-- Camera Dropdown -->
                             <select id="camera-select" class="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px] truncate">
                                 <option value="">Detecting cameras...</option>
                             </select>
@@ -123,11 +123,10 @@
                     </div>
                     
                     <div class="flex-1 overflow-auto" id="table-container">
-                        <!-- Table or Empty State -->
                         <div class="flex flex-col items-center justify-center h-full text-gray-400 p-8 text-center">
                             <i class="fa-solid fa-cloud-arrow-up text-4xl mb-4 opacity-30"></i>
                             <p class="text-lg font-medium text-gray-600">No attendees loaded</p>
-                            <p class="text-sm mt-1">Upload your CSV file at the top to populate this list.</p>
+                            <p class="text-sm mt-1">Upload your spreadsheet file to populate this list.</p>
                         </div>
                     </div>
                 </div>
@@ -136,9 +135,8 @@
         </div>
     </div>
 
-    <!-- Application JavaScript Logic -->
+    <!-- Application JavaScript -->
     <script>
-        // State management
         let attendees = [];
         let isScannerRunning = false;
         let html5QrCode = null;
@@ -146,11 +144,10 @@
         let searchTerm = '';
         let lastScanText = '';
         let lastScanTime = 0;
-        let detectedHeaders = [];
 
-        // Elements
         const csvFileInput = document.getElementById('csv-file');
         const fileStatus = document.getElementById('file-status');
+        const debugBanner = document.getElementById('debug-banner');
         const btnExport = document.getElementById('btn-export');
         const btnWalkin = document.getElementById('btn-walkin');
         const btnToggleScanner = document.getElementById('btn-toggle-scanner');
@@ -163,14 +160,23 @@
         const alertBox = document.getElementById('alert-box');
         const alertContent = document.getElementById('alert-content');
 
-        // Stats elements
         const statTotal = document.getElementById('stat-total');
         const statCheckedIn = document.getElementById('stat-checked-in');
         const statRemaining = document.getElementById('stat-remaining');
 
-        // Fetch connected cameras and populate dropdown
+        function showDebug(message, isError = true) {
+            debugBanner.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border-red-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+            if (isError) {
+                debugBanner.classList.add('bg-red-50', 'text-red-700', 'border-red-200');
+            } else {
+                debugBanner.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
+            }
+            debugBanner.innerHTML = message;
+        }
+
         async function populateCameraList() {
             try {
+                if (typeof Html5Qrcode === 'undefined') return;
                 const devices = await Html5Qrcode.getCameras();
                 cameraSelect.innerHTML = '';
                 
@@ -185,14 +191,12 @@
                     cameraSelect.innerHTML = '<option value="">No cameras found</option>';
                 }
             } catch (err) {
-                console.error("Camera detection error:", err);
                 cameraSelect.innerHTML = '<option value="">Default Camera</option>';
             }
         }
 
         window.addEventListener('DOMContentLoaded', populateCameraList);
 
-        // Audio initialization
         function initAudio() {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -213,7 +217,7 @@
             } else if (type === 'error') {
                 osc.frequency.setValueAtTime(300, audioCtx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.2);
-            } else { // warning
+            } else {
                 osc.frequency.setValueAtTime(500, audioCtx.currentTime);
                 osc.frequency.setValueAtTime(500, audioCtx.currentTime + 0.1);
             }
@@ -224,91 +228,119 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // CSV parsing (Universal handling)
+        // 100% NATIVE JAVASCRIPT FILE PARSER (No external dependencies!)
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
             if (!file) return;
 
-            // Excel Guardrail Check
             if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-                alert("⚠️ Incorrect File Format!\n\nPlease save your file as 'CSV (Comma delimited)' in Excel before uploading.");
+                showDebug(`<strong>⚠️ Cannot read Excel files directly!</strong><br>In Excel: Click <em>File > Save As</em> and change the format to <strong>CSV (Comma delimited) (*.csv)</strong>.`);
                 csvFileInput.value = '';
                 return;
             }
 
-            Papa.parse(file, {
-                header: true,
-                skipEmptyLines: 'greedy',
-                transformHeader: function(header) {
-                    return header.replace(/^\uFEFF/, '').trim();
-                },
-                complete: function(results) {
-                    if (!results.data || results.data.length === 0) {
-                        alert("The uploaded CSV file is empty.");
+            const reader = new FileReader();
+
+            reader.onload = function(evt) {
+                try {
+                    const text = evt.target.result;
+                    const lines = text.split(/\r\n|\n|\r/).map(l => l.trim()).filter(l => l.length > 0);
+
+                    if (lines.length === 0) {
+                        showDebug(`⚠️ The selected file is empty.`);
                         return;
                     }
 
-                    detectedHeaders = results.meta.fields || [];
+                    // Auto-detect Delimiter
+                    const sample = lines[0];
+                    let delimiter = ',';
+                    if (sample.includes('\t')) delimiter = '\t';
+                    else if (sample.includes(';') && !sample.includes(',')) delimiter = ';';
 
-                    attendees = results.data.map((row, index) => {
-                        const keys = Object.keys(row);
-                        
-                        // Extract row values
-                        const values = keys.map(k => String(row[k] || '').trim()).filter(Boolean);
-                        
-                        // Pick first two values for visual display in table
-                        const displayPrimary = values[0] || `Attendee #${index + 1}`;
-                        const displaySecondary = values[1] || '';
+                    // Parse line helper
+                    function parseLine(lineStr) {
+                        return lineStr.split(delimiter).map(cell => cell.replace(/^["']|["']$/g, '').trim());
+                    }
 
-                        // Look for optional status column
-                        const statusKey = keys.find(k => k.toLowerCase().includes('status'));
-                        const rawStatus = statusKey ? row[statusKey] : '';
+                    const rawRows = lines.map(parseLine);
+                    const firstRow = rawRows[0];
 
-                        return {
-                            id: index + Date.now() + index,
-                            primary: displayPrimary,
-                            secondary: displaySecondary,
-                            status: (rawStatus && String(rawStatus).trim()) ? String(rawStatus).trim() : 'Registered',
-                            allSearchValues: values.map(v => v.toLowerCase()),
-                            originalRow: row
-                        };
-                    });
+                    // Check if 1st row is header
+                    let hasHeader = true;
+                    if (rawRows.length > 1) {
+                        hasHeader = firstRow.some(cell => isNaN(cell) && !cell.includes('@'));
+                    }
+
+                    const startIndex = hasHeader ? 1 : 0;
+                    attendees = [];
+
+                    for (let i = startIndex; i < rawRows.length; i++) {
+                        const row = rawRows[i];
+                        if (!row || row.length === 0 || row.every(c => c === '')) continue;
+
+                        const primary = row[0] || `Attendee #${i + 1}`;
+                        const secondary = row[1] || '';
+
+                        attendees.push({
+                            id: i + Date.now(),
+                            primary: primary,
+                            secondary: secondary,
+                            status: 'Registered',
+                            allSearchValues: row.map(cell => cell.toLowerCase()),
+                            rawRow: row
+                        });
+                    }
+
+                    if (attendees.length === 0) {
+                        showDebug(`⚠️ Could not find any valid attendee rows in ${file.name}.`);
+                        return;
+                    }
 
                     fileStatus.textContent = `Loaded ${attendees.length} attendees from ${file.name}`;
                     fileStatus.className = "text-emerald-600 font-medium mt-1";
+                    
+                    showDebug(`✓ Successfully loaded <strong>${attendees.length} attendees</strong> from ${file.name}`, false);
 
                     resetAlertBox();
                     updateView();
                     csvFileInput.value = '';
+
+                } catch (err) {
+                    showDebug(`❌ Error reading file: ${err.message}`);
                 }
-            });
+            };
+
+            reader.onerror = function() {
+                showDebug(`❌ Browser failed to read the file.`);
+            };
+
+            reader.readAsText(file);
         });
 
-        // Export updated CSV
+        // Export updated list as CSV
         btnExport.addEventListener('click', function() {
             if (attendees.length === 0) return;
             
-            const exportData = attendees.map(a => ({
-                ...a.originalRow,
-                Status: a.status
-            }));
+            let csvContent = "data:text/csv;charset=utf-8,Identifier,Secondary,Status\n";
+            attendees.forEach(a => {
+                csvContent += `"${a.primary.replace(/"/g, '""')}","${a.secondary.replace(/"/g, '""')}","${a.status}"\n`;
+            });
             
-            const csv = Papa.unparse(exportData);
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const encodedUri = encodeURI(csvContent);
             const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `Event_CheckIn_Export_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`;
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `Event_CheckIn_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
         });
 
-        // Search Input handler
         searchInput.addEventListener('input', function(e) {
             searchTerm = e.target.value;
             renderTable();
         });
 
-        // Walk-in Registration
         btnWalkin.addEventListener('click', function() {
             initAudio();
             const name = prompt("Enter walk-in Name or Identifier:");
@@ -320,7 +352,7 @@
                     secondary: 'Walk-in',
                     status: 'Checked In',
                     allSearchValues: [cleanName.toLowerCase(), 'walk-in'],
-                    originalRow: { Name: cleanName, Status: 'Checked In' }
+                    rawRow: [cleanName, 'Walk-in', 'Checked In']
                 };
                 attendees.unshift(newAttendee);
                 setAlertState('success', 'Walk-in Registered & Checked In', cleanName);
@@ -329,7 +361,6 @@
             }
         });
 
-        // Scanner initialization and handling
         btnToggleScanner.addEventListener('click', async function() {
             initAudio();
             cameraError.classList.add('hidden');
@@ -342,6 +373,12 @@
         });
 
         async function startScanner() {
+            if (typeof Html5Qrcode === 'undefined') {
+                cameraError.textContent = 'Scanner library blocked by network filter. You can still manual check-in using the search bar.';
+                cameraError.classList.remove('hidden');
+                return;
+            }
+
             readerPlaceholder.classList.add('hidden');
             html5QrCode = new Html5Qrcode("reader");
             
@@ -352,21 +389,17 @@
                 await html5QrCode.start(
                     cameraConfig,
                     { fps: 10, qrbox: { width: 250, height: 250 } },
-                    (decodedText) => {
-                        processScan(decodedText.trim());
-                    },
-                    (errorMessage) => { /* Background frame noise */ }
+                    (decodedText) => processScan(decodedText.trim()),
+                    () => {}
                 );
                 
                 populateCameraList();
-
                 isScannerRunning = true;
                 scannerBtnText.textContent = "Stop Scanner";
                 btnToggleScanner.classList.replace('bg-blue-600', 'bg-red-100');
                 btnToggleScanner.classList.replace('text-white', 'text-red-700');
                 btnToggleScanner.classList.add('hover:bg-red-200');
             } catch (err) {
-                console.error(err);
                 cameraError.textContent = 'Could not start camera. Please verify camera permissions.';
                 cameraError.classList.remove('hidden');
                 readerPlaceholder.classList.remove('hidden');
@@ -378,9 +411,7 @@
                 try {
                     await html5QrCode.stop();
                     html5QrCode.clear();
-                } catch (err) {
-                    console.error(err);
-                }
+                } catch (err) {}
             }
             isScannerRunning = false;
             scannerBtnText.textContent = "Start Scanner";
@@ -397,18 +428,14 @@
             }
         });
 
-        // Universal Scan Processor (Matches scanned text against ANY column value)
         function processScan(scannedText) {
             const now = Date.now();
-            if (now - lastScanTime < 2500 && lastScanText === scannedText) {
-                return;
-            }
+            if (now - lastScanTime < 2500 && lastScanText === scannedText) return;
             lastScanTime = now;
             lastScanText = scannedText;
 
             const cleanScan = scannedText.toLowerCase();
 
-            // Find match in any column of any row
             const index = attendees.findIndex(a => 
                 a.allSearchValues.some(val => val === cleanScan || cleanScan.includes(val) || val.includes(cleanScan))
             );
@@ -507,7 +534,7 @@
                     <div class="flex flex-col items-center justify-center h-full text-gray-400 p-8 text-center">
                         <i class="fa-solid fa-cloud-arrow-up text-4xl mb-4 opacity-30"></i>
                         <p class="text-lg font-medium text-gray-600">No attendees loaded</p>
-                        <p class="text-sm mt-1">Upload your CSV file at the top to populate this list.</p>
+                        <p class="text-sm mt-1">Upload your spreadsheet file to populate this list.</p>
                     </div>
                 `;
                 return;
