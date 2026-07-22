@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration QR Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="min-h-screen bg-gray-100 text-gray-800 font-sans p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Registration Scanner</h1>
+                <p class="text-gray-500 mt-1">Scan QR codes to track event check-ins.</p>
+            </div>
+            <div class="mt-4 md:mt-0 flex flex-wrap gap-3">
+                <label class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm cursor-pointer hover:bg-gray-50 transition-colors">
+                    <i class="fa-solid fa-upload text-gray-600"></i>
+                    <span class="text-sm font-medium">Upload CSV</span>
+                    <input type="file" id="csv-file" accept=".csv" class="hidden" />
+                </label>
+                <button id="btn-export" disabled class="flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm font-medium transition-colors bg-gray-200 text-gray-400 cursor-not-allowed">
+                    <i class="fa-solid fa-download"></i>
+                    <span class="text-sm">Export List</span>
+                </button>
+                <button id="btn-walkin" class="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg shadow-sm font-medium hover:bg-emerald-200 transition-colors">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span class="text-sm">Add Walk-in</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+            <div class="lg:col-span-5 space-y-6">
+                
+                <div id="alert-box" class="p-6 rounded-2xl shadow-sm border bg-white border-gray-200 transition-all duration-300">
+                    <div id="alert-content" class="flex flex-col items-center text-center space-y-3">
+                        <i class="fa-solid fa-camera text-4xl text-gray-300"></i>
+                        <h3 class="text-xl font-medium text-gray-400">Waiting for scan...</h3>
+                        <p class="text-sm text-gray-400">Scan a QR code to see attendee status.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                    <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                        <h2 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fa-solid fa-qrcode"></i>
+                            QR Scanner
+                        </h2>
+                        <button id="btn-toggle-scanner" class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+                            <i class="fa-solid fa-camera"></i> <span id="scanner-btn-text">Start Scanner</span>
+                        </button>
+                    </div>
+                    
+                    <div class="p-4 bg-black relative">
+                        <div id="camera-error" class="hidden absolute inset-0 bg-red-900/90 z-10 flex items-center justify-center p-6 text-center text-red-100"></div>
+                        <div id="reader" class="w-full bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center">
+                            <div id="reader-placeholder" class="text-gray-500 text-center p-6">
+                                <i class="fa-solid fa-video-slash text-4xl mx-auto mb-3 opacity-50 block"></i>
+                                <p>Camera is off. Click "Start Scanner" to begin checking people in.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="lg:col-span-7 space-y-6">
+                
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex flex-col items-center justify-center text-center">
+                        <span class="text-sm font-medium text-gray-500">Total Registered</span>
+                        <span id="stat-total" class="text-3xl font-bold text-gray-900">0</span>
+                    </div>
+                    <div class="bg-emerald-50 p-4 rounded-2xl shadow-sm border border-emerald-100 flex flex-col items-center justify-center text-center">
+                        <span class="text-sm font-medium text-emerald-600">Checked In</span>
+                        <span id="stat-checked-in" class="text-3xl font-bold text-emerald-700">0</span>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-2xl shadow-sm border border-blue-100 flex flex-col items-center justify-center text-center">
+                        <span class="text-sm font-medium text-blue-600">Remaining</span>
+                        <span id="stat-remaining" class="text-3xl font-bold text-blue-700">0</span>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col overflow-hidden h-[600px]">
+                    <div class="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-4">
+                        <h2 class="font-semibold text-gray-700">Attendee List</h2>
+                        <div class="relative flex-1 max-w-xs">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            <input
+                                type="text"
+                                id="search-input"
+                                placeholder="Search email..."
+                                class="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 overflow-auto" id="table-container">
+                        <div class="flex flex-col items-center justify-center h-full text-gray-400 p-8 text-center">
+                            <i class="fa-solid fa-cloud-arrow-up text-4xl mb-4 opacity-30"></i>
+                            <p class="text-lg font-medium text-gray-600">No attendees loaded</p>
+                            <p class="text-sm mt-1">Upload your CSV file at the top to populate this list.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        let attendees = [];
+        let isScannerRunning = false;
+        let html5QrCode = null;
+        let audioCtx = null;
+        let searchTerm = '';
+        let lastScanText = '';
+        let lastScanTime = 0;
+
+        // Elements
+        const csvFileInput = document.getElementById('csv-file');
+        const btnExport = document.getElementById('btn-export');
+        const btnWalkin = document.getElementById('btn-walkin');
+        const btnToggleScanner = document.getElementById('btn-toggle-scanner');
+        const scannerBtnText = document.getElementById('scanner-btn-text');
+        const readerPlaceholder = document.getElementById('reader-placeholder');
+        const cameraError = document.getElementById('camera-error');
+        const searchInput = document.getElementById('search-input');
+        const tableContainer = document.getElementById('table-container');
+        const alertBox = document.getElementById('alert-box');
+        const alertContent = document.getElementById('alert-content');
+
+        // Stats elements
+        const statTotal = document.getElementById('stat-total');
+        const statCheckedIn = document.getElementById('stat-checked-in');
+        const statRemaining = document.getElementById('stat-remaining');
+
+        // Audio initialization (bypasses browser autoplay restrictions)
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playBeep(type = 'success') {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            
+            if (type === 'success') {
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            } else if (type === 'error') {
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.2);
+            } else { // warning
+                osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(500, audioCtx.currentTime + 0.1);
+            }
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.2);
+        }
+
+        // CSV parsing
+        csvFileInput.addEventListener('change', function(e) {
+            initAudio();
+            const file = e.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    attendees = results.data.map((row, index) => {
+                        const emailKey = Object.keys(row).find(k => k.toLowerCase() === 'email');
+                        const statusKey = Object.keys(row).find(k => k.toLowerCase() === 'status');
+                        
+                        return {
+                            id: index + Date.now(),
+                            email: emailKey ? row[emailKey].trim() : '',
+                            status: (statusKey ? row[statusKey].trim() : 'Registered') || 'Registered',
+                            originalRow: row
+                        };
+                    }).filter(r => r.email);
+
+                    // Reset alert and update view
+                    resetAlertBox();
+                    updateView();
+                }
+            });
+        });
+
+        // Export updated CSV
+        btnExport.addEventListener('click', function() {
+            if (attendees.length === 0) return;
+            
+            const exportData = attendees.map(a => ({
+                ...a.originalRow,
+                Email: a.email,
+                Status: a.status
+            }));
+            
+            const csv = Papa.unparse(exportData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Event_CheckIn_Export_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`;
+            link.click();
+        });
+
+        // Search Input handler
+        searchInput.addEventListener('input', function(e) {
+            searchTerm = e.target.value;
+            renderTable();
+        });
+
+        // Walk-in Registration
+        btnWalkin.addEventListener('click', function() {
+            initAudio();
+            const email = prompt("Enter walk-in email address:");
+            if (email && email.trim() !== '') {
+                const cleanEmail = email.trim();
+                const newAttendee = {
+                    id: Date.now(),
+                    email: cleanEmail,
+                    status: 'Checked In',
+                    originalRow: { Email: cleanEmail, Status: 'Checked In' }
+                };
+                attendees.unshift(newAttendee);
+                setAlertState('success', 'Walk-in Registered & Checked In', cleanEmail);
+                playBeep('success');
+                updateView();
+            }
+        });
+
+        // Scanner initialization and handling
+        btnToggleScanner.addEventListener('click', async function() {
+            initAudio();
+            cameraError.classList.add('hidden');
+
+            if (isScannerRunning) {
+                await stopScanner();
+            } else {
+                startScanner();
+            }
+        });
+
+        async function startScanner() {
+            readerPlaceholder.classList.add('hidden');
+            html5QrCode = new Html5Qrcode("reader");
+            
+            try {
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    (decodedText) => {
+                        processScan(decodedText.trim());
+                    },
+                    (errorMessage) => { /* Normal background noise reading error, ignore */ }
+                );
+                
+                isScannerRunning = true;
+                scannerBtnText.textContent = "Stop Scanner";
+                btnToggleScanner.classList.replace('bg-blue-600', 'bg-red-100');
+                btnToggleScanner.classList.replace('text-white', 'text-red-700');
+                btnToggleScanner.classList.add('hover:bg-red-200');
+            } catch (err) {
+                console.error(err);
+                cameraError.textContent = 'Could not start camera. Please verify you have given the page camera permissions.';
+                cameraError.classList.remove('hidden');
+                readerPlaceholder.classList.remove('hidden');
+            }
+        }
+
+        async function stopScanner() {
+            if (html5QrCode) {
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+            isScannerRunning = false;
+            scannerBtnText.textContent = "Start Scanner";
+            btnToggleScanner.classList.replace('bg-red-100', 'bg-blue-600');
+            btnToggleScanner.classList.replace('text-red-700', 'text-white');
+            btnToggleScanner.classList.remove('hover:bg-red-200');
+            readerPlaceholder.classList.remove('hidden');
+        }
+
+        // Process Code Scan
+        function processScan(scannedEmail) {
+            const now = Date.now();
+            // Prevent duplicate scanning of the same email within 2.5 seconds
+            if (now - lastScanTime < 2500 && lastScanText === scannedEmail) {
+                return;
+            }
+            lastScanTime = now;
+            lastScanText = scannedEmail;
+
+            const index = attendees.findIndex(a => a.email.toLowerCase() === scannedEmail.toLowerCase());
+
+            if (index >= 0) {
+                if (attendees[index].status === 'Checked In') {
+                    playBeep('warning');
+                    setAlertState('warning', 'Attendee already checked in!', scannedEmail);
+                } else {
+                    attendees[index].status = 'Checked In';
+                    playBeep('success');
+                    setAlertState('success', 'Successfully Checked In', scannedEmail);
+                    updateView();
+                }
+            } else {
+                playBeep('error');
+                setAlertState('error', 'NOT REGISTERED! Send to registration table.', scannedEmail);
+            }
+        }
+
+        function manualCheckIn(id) {
+            initAudio();
+            const attendee = attendees.find(a => a.id === id);
+            if (attendee) {
+                attendee.status = 'Checked In';
+                playBeep('success');
+                setAlertState('success', 'Manually Checked In', attendee.email);
+                updateView();
+            }
+        }
+
+        // Alert Box UI manipulation
+        function resetAlertBox() {
+            alertBox.className = "p-6 rounded-2xl shadow-sm border bg-white border-gray-200 transition-all duration-300";
+            alertContent.innerHTML = `
+                <i class="fa-solid fa-camera text-4xl text-gray-300"></i>
+                <h3 class="text-xl font-medium text-gray-400">Waiting for scan...</h3>
+                <p class="text-sm text-gray-400">Scan a QR code to see attendee status.</p>
+            `;
+        }
+
+        function setAlertState(type, message, text) {
+            alertBox.className = "p-6 rounded-2xl shadow-sm border transition-all duration-300 ";
+            let iconHtml = '';
+            let textClass = '';
+
+            if (type === 'success') {
+                alertBox.classList.add('bg-emerald-50', 'border-emerald-500', 'shadow-emerald-100');
+                iconHtml = `<i class="fa-solid fa-circle-check text-5xl text-emerald-500 animate-bounce"></i>`;
+                textClass = 'text-emerald-600';
+            } else if (type === 'warning') {
+                alertBox.classList.add('bg-amber-50', 'border-amber-500', 'shadow-amber-100');
+                iconHtml = `<i class="fa-solid fa-circle-exclamation text-5xl text-amber-500"></i>`;
+                textClass = 'text-amber-600';
+            } else {
+                alertBox.classList.add('bg-red-50', 'border-red-500', 'shadow-red-100');
+                iconHtml = `<i class="fa-solid fa-circle-xmark text-5xl text-red-500 animate-pulse"></i>`;
+                textClass = 'text-red-600';
+            }
+
+            alertContent.innerHTML = `
+                ${iconHtml}
+                <div class="w-full">
+                    <p class="text-sm font-bold tracking-wider uppercase mb-1 ${textClass}">${message}</p>
+                    <h3 class="text-2xl font-bold text-gray-900 break-all">${text}</h3>
+                </div>
+            `;
+        }
+
+        // View updates
+        function updateView() {
+            renderStats();
+            renderTable();
+            
+            if (attendees.length > 0) {
+                btnExport.disabled = false;
+                btnExport.className = "flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow-sm font-medium transition-colors";
+            } else {
+                btnExport.disabled = true;
+                btnExport.className = "flex items-center gap-2 px-4 py-2 rounded-lg shadow-sm font-medium transition-colors bg-gray-200 text-gray-400 cursor-not-allowed";
+            }
+        }
+
+        function renderStats() {
+            const total = attendees.length;
+            const checkedIn = attendees.filter(a => a.status === 'Checked In').length;
+            const remaining = total - checkedIn;
+
+            statTotal.textContent = total;
+            statCheckedIn.textContent = checkedIn;
+            statRemaining.textContent = remaining;
+        }
+
+        function renderTable() {
+            if (attendees.length === 0) {
+                tableContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-gray-400 p-8 text-center">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl mb-4 opacity-30"></i>
+                        <p class="text-lg font-medium text-gray-600">No attendees loaded</p>
+                        <p class="text-sm mt-1">Upload your CSV file at the top to populate this list.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const filtered = attendees.filter(a => 
+                a.email.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                a.status.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            let tableHtml = `
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-white sticky top-0 shadow-sm z-10">
+                        <tr>
+                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
+                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-24">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+            `;
+
+            if (filtered.length === 0) {
+                tableHtml += `
+                    <tr>
+                        <td colSpan="3" class="py-8 text-center text-gray-500">
+                            No attendees found matching "${searchTerm}"
+                        </td>
+                    </tr>
+                `;
+            } else {
+                filtered.forEach(attendee => {
+                    const statusClass = attendee.status === 'Checked In' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-800';
+                    const actionButton = attendee.status !== 'Checked In' 
+                        ? `<button onclick="manualCheckIn(${attendee.id})" class="inline-flex items-center justify-center p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Manual Check-In">
+                               <i class="fa-solid fa-user-check text-lg"></i>
+                           </button>` 
+                        : '';
+
+                    tableHtml += `
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="py-3 px-4">
+                                <span class="font-medium text-gray-900">${attendee.email}</span>
+                            </td>
+                            <td class="py-3 px-4">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+                                    ${attendee.status}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4 text-right">
+                                ${actionButton}
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            tableHtml += `</tbody></table>`;
+            tableContainer.innerHTML = tableHtml;
+        }
+    </script>
+</body>
+</html>
