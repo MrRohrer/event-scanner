@@ -228,7 +228,7 @@
             osc.stop(audioCtx.currentTime + 0.2);
         }
 
-        // 100% NATIVE JAVASCRIPT FILE PARSER (No external dependencies!)
+        // Native CSV/TXT Parser
         csvFileInput.addEventListener('change', function(e) {
             initAudio();
             const file = e.target.files[0];
@@ -258,7 +258,6 @@
                     if (sample.includes('\t')) delimiter = '\t';
                     else if (sample.includes(';') && !sample.includes(',')) delimiter = ';';
 
-                    // Parse line helper
                     function parseLine(lineStr) {
                         return lineStr.split(delimiter).map(cell => cell.replace(/^["']|["']$/g, '').trim());
                     }
@@ -266,7 +265,6 @@
                     const rawRows = lines.map(parseLine);
                     const firstRow = rawRows[0];
 
-                    // Check if 1st row is header
                     let hasHeader = true;
                     if (rawRows.length > 1) {
                         hasHeader = firstRow.some(cell => isNaN(cell) && !cell.includes('@'));
@@ -287,7 +285,8 @@
                             primary: primary,
                             secondary: secondary,
                             status: 'Registered',
-                            allSearchValues: row.map(cell => cell.toLowerCase()),
+                            // Sanitize cell values for search matching
+                            allSearchValues: row.map(cell => cell.toLowerCase().replace(/^mailto:/, '').trim()).filter(c => c.length > 0),
                             rawRow: row
                         });
                     }
@@ -318,7 +317,7 @@
             reader.readAsText(file);
         });
 
-        // Export updated list as CSV
+        // Export updated list
         btnExport.addEventListener('click', function() {
             if (attendees.length === 0) return;
             
@@ -428,17 +427,35 @@
             }
         });
 
+        // STRICT SCAN PROCESSOR (Prevents false positive matches)
         function processScan(scannedText) {
             const now = Date.now();
             if (now - lastScanTime < 2500 && lastScanText === scannedText) return;
             lastScanTime = now;
             lastScanText = scannedText;
 
-            const cleanScan = scannedText.toLowerCase();
+            // Strip mailto:, url query parameters, and leading/trailing whitespace
+            let cleanScan = scannedText.toLowerCase()
+                .replace(/^mailto:/, '')
+                .trim();
 
-            const index = attendees.findIndex(a => 
-                a.allSearchValues.some(val => val === cleanScan || cleanScan.includes(val) || val.includes(cleanScan))
+            if (!cleanScan) return;
+
+            // STEP 1: EXACT MATCH (Safest & most accurate)
+            let index = attendees.findIndex(a => 
+                a.allSearchValues.some(val => val === cleanScan)
             );
+
+            // STEP 2: SUBSTRING MATCH (Only for URLs containing a long identifier like an email >= 6 chars)
+            if (index === -1) {
+                index = attendees.findIndex(a => 
+                    a.allSearchValues.some(val => {
+                        // Ignore short words/numbers (e.g. "OH", "com", "43") to prevent false positives
+                        if (val.length < 6) return false;
+                        return cleanScan.includes(val);
+                    })
+                );
+            }
 
             if (index >= 0) {
                 const found = attendees[index];
@@ -453,7 +470,7 @@
                 }
             } else {
                 playBeep('error');
-                setAlertState('error', 'NOT REGISTERED! Send to registration table.', scannedText);
+                setAlertState('error', 'NOT REGISTERED! Send to registration table.', cleanScan);
             }
         }
 
