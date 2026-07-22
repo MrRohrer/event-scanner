@@ -139,6 +139,40 @@
         </div>
     </div>
 
+    <!-- Walk-in Modal -->
+    <div id="walkin-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800">Add Walk-in Attendee</h3>
+                <button id="btn-close-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">First Name <span class="text-red-500">*</span></label>
+                    <input type="text" id="walkin-first" placeholder="e.g. Jane" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Last Name</label>
+                    <input type="text" id="walkin-last" placeholder="e.g. Doe" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                    <input type="email" id="walkin-email" placeholder="e.g. jane@example.com" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">School Building</label>
+                    <input type="text" id="walkin-school" placeholder="e.g. Lincoln Elementary" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                <button id="btn-cancel-walkin" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg font-medium transition-colors">Cancel</button>
+                <button id="btn-save-walkin" class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-medium transition-colors shadow-sm">Save & Check In</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Application JavaScript -->
     <script>
         let attendees = [];
@@ -168,6 +202,16 @@
         const statTotal = document.getElementById('stat-total');
         const statCheckedIn = document.getElementById('stat-checked-in');
         const statRemaining = document.getElementById('stat-remaining');
+
+        // Modal Elements
+        const walkinModal = document.getElementById('walkin-modal');
+        const walkinFirst = document.getElementById('walkin-first');
+        const walkinLast = document.getElementById('walkin-last');
+        const walkinEmail = document.getElementById('walkin-email');
+        const walkinSchool = document.getElementById('walkin-school');
+        const btnSaveWalkin = document.getElementById('btn-save-walkin');
+        const btnCancelWalkin = document.getElementById('btn-cancel-walkin');
+        const btnCloseModal = document.getElementById('btn-close-modal');
 
         // --- BROWSER STORAGE FUNCTIONS ---
         function saveData() {
@@ -223,7 +267,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             populateCameraList();
-            loadData(); // Load data if page is refreshed
+            loadData();
         });
 
         function initAudio() {
@@ -302,7 +346,7 @@
             reader.onload = function(evt) {
                 try {
                     let text = evt.target.result;
-                    text = text.replace(/^\ufeff/, ''); // Strip BOM
+                    text = text.replace(/^\ufeff/, '');
 
                     let firstLine = text.split('\n')[0] || '';
                     let delimiter = ',';
@@ -329,6 +373,7 @@
                     let emailIndices = [];
                     let parentGuardIndices = [];
                     let fullNameIndices = [];
+                    let schoolIndices = [];
 
                     for (let r = 0; r < dataStartIdx; r++) {
                         rawRows[r].forEach((col, idx) => {
@@ -339,6 +384,7 @@
                             if (c.includes('first') || c === 'q2' || c.includes('recipientfirstname')) firstNameIndices.push(idx);
                             if (c.includes('email') || c.includes('qr') || c === 'q5' || c.includes('recipientemail')) emailIndices.push(idx);
                             if (c.includes('parent/guard')) parentGuardIndices.push(idx);
+                            if (c.includes('school') || c.includes('building')) schoolIndices.push(idx);
                             if (c.includes('name') && !c.includes('school') && !c.includes('teacher') && !c.includes('first') && !c.includes('last')) fullNameIndices.push(idx);
                         });
                     }
@@ -359,6 +405,7 @@
                         let lastName = getValue(lastNameIndices, row);
                         let firstName = getValue(firstNameIndices, row);
                         let email = getValue(emailIndices, row).toLowerCase();
+                        let school = getValue(schoolIndices, row);
 
                         if (!firstName && parentGuardIndices.length > 0) {
                             firstName = row[parentGuardIndices[0]] ? row[parentGuardIndices[0]].trim() : '';
@@ -386,16 +433,18 @@
                         if (lastName || firstName || email) {
                             attendees.push({
                                 id: i + Date.now(),
-                                lastName: lastName || '—',
-                                firstName: firstName || '—',
-                                email: email,
+                                lastName: lastName || '',
+                                firstName: firstName || '',
+                                email: email || '',
+                                school: school || '',
                                 status: 'Registered',
                                 allSearchValues: [
                                     lastName.toLowerCase(),
                                     firstName.toLowerCase(),
                                     `${firstName} ${lastName}`.toLowerCase(),
                                     `${lastName} ${firstName}`.toLowerCase(),
-                                    email
+                                    email.toLowerCase(),
+                                    school.toLowerCase()
                                 ].filter(Boolean)
                             });
                         }
@@ -406,7 +455,7 @@
                         return;
                     }
 
-                    saveData(); // Save new upload to browser
+                    saveData(); 
                     
                     fileStatus.textContent = `Loaded ${attendees.length} attendees from ${file.name}`;
                     fileStatus.className = "text-emerald-600 font-medium mt-1";
@@ -443,9 +492,13 @@
         btnExport.addEventListener('click', function() {
             if (attendees.length === 0) return;
             
-            let csvContent = "data:text/csv;charset=utf-8,Last Name,First Name,Email,Status\n";
+            let csvContent = "data:text/csv;charset=utf-8,Last Name,First Name,Email,School Building,Status\n";
             attendees.forEach(a => {
-                csvContent += `"${a.lastName.replace(/"/g, '""')}","${a.firstName.replace(/"/g, '""')}","${a.email.replace(/"/g, '""')}","${a.status}"\n`;
+                const safeLast = (a.lastName || '').replace(/"/g, '""');
+                const safeFirst = (a.firstName || '').replace(/"/g, '""');
+                const safeEmail = (a.email || '').replace(/"/g, '""');
+                const safeSchool = (a.school || '').replace(/"/g, '""');
+                csvContent += `"${safeLast}","${safeFirst}","${safeEmail}","${safeSchool}","${a.status}"\n`;
             });
             
             const encodedUri = encodeURI(csvContent);
@@ -462,32 +515,60 @@
             renderTable();
         });
 
+        // Walk-in Modal Logic
+        function closeWalkinModal() {
+            walkinModal.classList.add('hidden');
+            walkinFirst.value = '';
+            walkinLast.value = '';
+            walkinEmail.value = '';
+            walkinSchool.value = '';
+        }
+
         btnWalkin.addEventListener('click', function() {
             initAudio();
-            const firstName = prompt("Enter Parent/Guardian First Name:");
-            if (!firstName || !firstName.trim()) return;
-            
-            const lastName = prompt("Enter Parent/Guardian Last Name (optional):") || "";
-            const email = prompt("Enter Email Address (optional):") || "Walk-in";
-            
-            const cleanFirst = firstName.trim();
-            const cleanLast = lastName.trim();
-            const cleanEmail = email.trim();
-            
+            walkinModal.classList.remove('hidden');
+            walkinFirst.focus();
+        });
+
+        btnCancelWalkin.addEventListener('click', closeWalkinModal);
+        btnCloseModal.addEventListener('click', closeWalkinModal);
+
+        btnSaveWalkin.addEventListener('click', function() {
+            const first = walkinFirst.value.trim();
+            const last = walkinLast.value.trim();
+            const email = walkinEmail.value.trim();
+            const school = walkinSchool.value.trim();
+
+            if (!first) {
+                alert("First Name is required.");
+                walkinFirst.focus();
+                return;
+            }
+
             const newAttendee = {
                 id: Date.now(),
-                lastName: cleanLast,
-                firstName: cleanFirst,
-                email: cleanEmail,
+                lastName: last,
+                firstName: first,
+                email: email || 'Walk-in',
+                school: school,
                 status: 'Checked In',
-                allSearchValues: [cleanLast.toLowerCase(), cleanFirst.toLowerCase(), `${cleanFirst} ${cleanLast}`.toLowerCase(), cleanEmail.toLowerCase(), 'walk-in']
+                allSearchValues: [
+                    last.toLowerCase(), 
+                    first.toLowerCase(), 
+                    `${first} ${last}`.toLowerCase(), 
+                    email.toLowerCase(), 
+                    school.toLowerCase(), 
+                    'walk-in'
+                ].filter(Boolean)
             };
-            attendees.unshift(newAttendee);
-            saveData(); // Save new walkin to browser
             
-            setAlertState('success', 'Walk-in Registered & Checked In', `${cleanLast ? cleanLast + ', ' : ''}${cleanFirst}`);
+            attendees.unshift(newAttendee);
+            saveData();
+            
+            setAlertState('success', 'Walk-in Registered & Checked In', `${last ? last + ', ' : ''}${first}`);
             playBeep('success');
             updateView();
+            closeWalkinModal();
         });
 
         btnToggleScanner.addEventListener('click', async function() {
@@ -584,7 +665,7 @@
                     setAlertState('warning', 'Attendee already checked in!', displayName);
                 } else {
                     found.status = 'Checked In';
-                    saveData(); // Save status change to browser
+                    saveData();
                     playBeep('success');
                     setAlertState('success', 'Successfully Checked In', displayName);
                     updateView();
@@ -600,7 +681,7 @@
             const attendee = attendees.find(a => a.id === id);
             if (attendee) {
                 attendee.status = 'Checked In';
-                saveData(); // Save status change to browser
+                saveData();
                 playBeep('success');
                 setAlertState('success', 'Manually Checked In', `${attendee.lastName ? attendee.lastName + ', ' : ''}${attendee.firstName}`);
                 updateView();
@@ -691,6 +772,7 @@
                         <tr>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendee</th>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                            <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">School</th>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                             <th class="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Action</th>
                         </tr>
@@ -701,7 +783,7 @@
             if (filtered.length === 0) {
                 tableHtml += `
                     <tr>
-                        <td colspan="4" class="py-8 text-center text-gray-500">
+                        <td colspan="5" class="py-8 text-center text-gray-500">
                             No attendees found matching "${searchTerm}"
                         </td>
                     </tr>
@@ -712,7 +794,12 @@
                         ? 'bg-emerald-100 text-emerald-800' 
                         : 'bg-gray-100 text-gray-800';
 
-                    const displayName = `${a.lastName ? a.lastName + ', ' : ''}${a.firstName}`;
+                    // Formatting names correctly even if first/last are blank
+                    let displayName = '';
+                    if (a.lastName && a.firstName) displayName = `${a.lastName}, ${a.firstName}`;
+                    else if (a.lastName) displayName = a.lastName;
+                    else if (a.firstName) displayName = a.firstName;
+                    else displayName = '—';
 
                     tableHtml += `
                         <tr class="hover:bg-gray-50 transition-colors">
@@ -720,6 +807,7 @@
                                 <div class="font-medium text-gray-900">${displayName}</div>
                             </td>
                             <td class="py-3 px-4 text-sm text-gray-500">${a.email || '—'}</td>
+                            <td class="py-3 px-4 text-sm text-gray-500 hidden md:table-cell">${a.school || '—'}</td>
                             <td class="py-3 px-4">
                                 <span class="px-2.5 py-1 rounded-full text-xs font-medium ${statusClass}">
                                     ${a.status}
