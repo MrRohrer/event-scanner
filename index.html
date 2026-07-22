@@ -163,7 +163,7 @@
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">School Building</label>
-                    <input type="text" id="walkin-school" placeholder="e.g. Lincoln Elementary" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="walkin-school" placeholder="e.g. FTES" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
             </div>
             <div class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
@@ -398,6 +398,18 @@
                         return '';
                     };
 
+                    // New smarter school fetching function
+                    const getSchoolValue = (indices, row) => {
+                        let vals = [];
+                        for (let idx of indices) {
+                            let val = row[idx] ? row[idx].trim() : '';
+                            if (val) vals.push(val);
+                        }
+                        // If Qualtrics exported both numeric codes and text, pick the actual text!
+                        let textVal = vals.find(v => isNaN(v) && v.length > 1);
+                        return textVal || vals[0] || '';
+                    };
+
                     for (let i = dataStartIdx; i < rawRows.length; i++) {
                         const row = rawRows[i];
                         if (!row || row.length === 0 || row.every(c => !c || c.trim() === '')) continue;
@@ -405,7 +417,7 @@
                         let lastName = getValue(lastNameIndices, row);
                         let firstName = getValue(firstNameIndices, row);
                         let email = getValue(emailIndices, row).toLowerCase();
-                        let school = getValue(schoolIndices, row);
+                        let school = getSchoolValue(schoolIndices, row);
 
                         if (!firstName && parentGuardIndices.length > 0) {
                             firstName = row[parentGuardIndices[0]] ? row[parentGuardIndices[0]].trim() : '';
@@ -460,7 +472,15 @@
                     fileStatus.textContent = `Loaded ${attendees.length} attendees from ${file.name}`;
                     fileStatus.className = "text-emerald-600 font-medium mt-1";
                     
-                    showDebug(`✓ Successfully loaded <strong>${attendees.length} attendees</strong> from ${file.name}`, false);
+                    // Smart Check: Are all the imported schools just Qualtrics numeric codes?
+                    let attendeesWithSchool = attendees.filter(a => a.school !== '');
+                    let numericSchools = attendeesWithSchool.filter(a => !isNaN(a.school));
+                    
+                    if (attendeesWithSchool.length > 0 && numericSchools.length > (attendeesWithSchool.length / 2)) {
+                        showDebug(`✓ Loaded <strong>${attendees.length} attendees</strong>.<br><br>⚠️ <strong>Notice:</strong> Your imported schools are showing up as numbers (like "1" or "2"). To see actual school names, you must re-export your list from Qualtrics. Click <em>Export Data > Download Options</em> and select <strong>"Use Choice Text"</strong> instead of "Numeric Values".`, false);
+                    } else {
+                        showDebug(`✓ Successfully loaded <strong>${attendees.length} attendees</strong> from ${file.name}`, false);
+                    }
 
                     resetAlertBox();
                     updateView();
