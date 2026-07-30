@@ -32,7 +32,7 @@
                     <!-- Real-time Status Badge -->
                     <span id="sync-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
                         <span class="w-2 h-2 rounded-full bg-amber-500 pulse-subtle"></span>
-                        Connecting to Cloud...
+                        <span id="sync-status-text">Connecting to Cloud...</span>
                     </span>
                 </div>
                 <p class="text-slate-500 text-sm mt-1" id="file-status">Upload CSV/TXT file or join shared event ID to sync across stations.</p>
@@ -205,6 +205,7 @@
         </div>
     </div>
 
+    <!-- Walk-in Modal -->
     <div id="walkin-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-100">
             <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
@@ -321,7 +322,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase Configuration Setup
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-qr-scanner-app';
@@ -335,11 +336,16 @@
         };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        let app, db, auth;
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (err) {
+            console.warn("Firebase init warn:", err);
+        }
 
-        // Read Event Code from URL query param if present (e.g. ?event=MY-EVENT)
+        // Read Event Code from URL query param if present
         const urlParams = new URLSearchParams(window.location.search);
         const queryEvent = urlParams.get('event');
 
@@ -355,10 +361,167 @@
         let lastScanText = '';
         let lastScanTime = 0;
         let unsubscribeListener = null;
-        let currentUser = null;
+        let isCloudConnected = false;
 
-        // UI Element References
-        // Improved CSV Array Parser supporting standard quotes, escaping, and line breaks
+        // Explicit UI Element Binding
+        const syncStatusBadge = document.getElementById('sync-status-badge');
+        const syncStatusText = document.getElementById('sync-status-text');
+        const fileStatus = document.getElementById('file-status');
+        const stationNameInput = document.getElementById('station-name-input');
+        const eventCodeText = document.getElementById('event-code-text');
+        const btnEventCode = document.getElementById('btn-event-code');
+        const csvFileInput = document.getElementById('csv-file');
+        const btnExport = document.getElementById('btn-export');
+        const btnWalkin = document.getElementById('btn-walkin');
+        const btnClear = document.getElementById('btn-clear');
+        const debugBanner = document.getElementById('debug-banner');
+        const alertBox = document.getElementById('alert-box');
+        const alertContent = document.getElementById('alert-content');
+        const cameraSelect = document.getElementById('camera-select');
+        const btnToggleScanner = document.getElementById('btn-toggle-scanner');
+        const scannerBtnText = document.getElementById('scanner-btn-text');
+        const cameraError = document.getElementById('camera-error');
+        const manualScanForm = document.getElementById('manual-scan-form');
+        const manualScanInput = document.getElementById('manual-scan-input');
+        const statTotal = document.getElementById('stat-total');
+        const statCheckedIn = document.getElementById('stat-checked-in');
+        const statRemaining = document.getElementById('stat-remaining');
+        const statWalkins = document.getElementById('stat-walkins');
+        const searchInput = document.getElementById('search-input');
+        const tableContainer = document.getElementById('table-container');
+        const walkinModal = document.getElementById('walkin-modal');
+        const walkinFirst = document.getElementById('walkin-first');
+        const walkinLast = document.getElementById('walkin-last');
+        const walkinEmail = document.getElementById('walkin-email');
+        const walkinSchool = document.getElementById('walkin-school');
+        const btnSaveWalkin = document.getElementById('btn-save-walkin');
+        const btnCancelWalkin = document.getElementById('btn-cancel-walkin');
+        const btnCloseModal = document.getElementById('btn-close-modal');
+        const eventModal = document.getElementById('event-modal');
+        const shareModal = document.getElementById('share-modal');
+        const confirmModal = document.getElementById('confirm-modal');
+        const btnShareSession = document.getElementById('btn-share-session');
+        const shareLinkInput = document.getElementById('share-link-input');
+        const btnCopyShareLink = document.getElementById('btn-copy-share-link');
+        const copyStatusMsg = document.getElementById('copy-status-msg');
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playBeep(type = 'success') {
+            try {
+                initAudio();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'success') {
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                    osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.08);
+                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.25);
+                } else if (type === 'warning') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                    osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.1);
+                    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.3);
+                } else {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.35);
+                }
+            } catch (e) {
+                console.log("Audio not supported or blocked", e);
+            }
+        }
+
+        async function initializeAppAuthAndSync() {
+            try {
+                if (auth) {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    isCloudConnected = true;
+                    updateSyncBadge(true, "Cloud Connected");
+                    setupRealtimeSync();
+                } else {
+                    throw new Error("No Auth instance");
+                }
+            } catch (err) {
+                console.warn("Cloud connection unavailable, running in local-session mode:", err);
+                isCloudConnected = false;
+                updateSyncBadge(false, "Local Session Mode");
+                loadFromLocalStorage();
+                updateView();
+            }
+        }
+
+        function updateSyncBadge(online, text) {
+            if (online) {
+                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200";
+                syncStatusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-emerald-500 pulse-subtle";
+            } else {
+                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200";
+                syncStatusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-blue-500";
+            }
+            syncStatusText.textContent = text;
+        }
+
+        function setupRealtimeSync() {
+            if (!isCloudConnected || !db) return;
+            if (unsubscribeListener) unsubscribeListener();
+
+            const attendeesCol = collection(db, 'artifacts', appId, 'public', 'data', 'attendees');
+            
+            unsubscribeListener = onSnapshot(attendeesCol, (snapshot) => {
+                const list = [];
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    if (!data.eventCode || data.eventCode === eventCode) {
+                        list.push({ id: docSnap.id, ...data });
+                    }
+                });
+                attendees = list;
+                saveToLocalStorage();
+                updateView();
+            }, (error) => {
+                console.error("Firestore sync error:", error);
+                showDebug(`Sync warning: Using local state fallback. (${error.message})`, true);
+                loadFromLocalStorage();
+                updateView();
+            });
+        }
+
+        function saveToLocalStorage() {
+            try {
+                localStorage.setItem(`qr_attendees_${eventCode}`, JSON.stringify(attendees));
+            } catch(e){}
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const data = localStorage.getItem(`qr_attendees_${eventCode}`);
+                if (data) attendees = JSON.parse(data);
+            } catch(e){}
+        }
+
         function csvToArray(strData, strDelimiter = ",") {
             const objPattern = new RegExp(
                 ("(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
@@ -387,14 +550,14 @@
             return arrData;
         }
 
-        // Handle File Selection with Fail-Safe Auto Column Mapper
+        // CSV Upload Handler
         csvFileInput.addEventListener('change', async function(e) {
             initAudio();
             const file = e.target.files[0];
             if (!file) return;
 
             if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-                showDebug(`<strong>⚠️ Cannot read binary Excel files directly!</strong><br>In Excel: Click <em>File > Save As</em> and change format to <strong>CSV (Comma delimited) (*.csv)</strong>.`);
+                showDebug(`<strong>⚠️ Cannot read binary Excel files directly!</strong><br>In Excel: Click <em>File > Save As</em> and select <strong>CSV (Comma delimited) (*.csv)</strong>.`, true);
                 csvFileInput.value = '';
                 return;
             }
@@ -403,12 +566,11 @@
             reader.onload = async function(evt) {
                 try {
                     let text = evt.target.result.replace(/^\ufeff/, '');
-                    // Normalize line endings
                     text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
                     const lines = text.split('\n').filter(l => l.trim() !== '');
                     if (lines.length === 0) {
-                        showDebug(`⚠️ The uploaded file is empty.`);
+                        showDebug(`⚠️ The uploaded file is empty.`, true);
                         return;
                     }
 
@@ -419,14 +581,12 @@
 
                     const rawRows = csvToArray(text, delimiter);
                     if (rawRows.length === 0) {
-                        showDebug(`⚠️ Could not parse CSV rows.`);
+                        showDebug(`⚠️ Could not parse CSV rows.`, true);
                         return;
                     }
 
-                    // Flexible Column Mapping Strategy
                     let firstNameIdx = -1, lastNameIdx = -1, fullNameIdx = -1, emailIdx = -1, schoolIdx = -1;
                     
-                    // Header Inspection
                     const headerRow = rawRows[0];
                     headerRow.forEach((col, idx) => {
                         if (!col) return;
@@ -436,12 +596,11 @@
                         else if (c.includes('last') || c.includes('lname') || c.includes('surname') || c.includes('family')) lastNameIdx = idx;
                         else if ((c.includes('name') || c.includes('attendee') || c.includes('participant') || c.includes('guest') || c.includes('user')) && !c.includes('school') && !c.includes('org') && !c.includes('company')) fullNameIdx = idx;
                         
-                        if (c.includes('email') || c.includes('mail') || c.includes('qr') || c.includes('code') || c.includes('ticket')) emailIdx = idx;
+                        if (c.includes('email') || c.includes('mail') || c.includes('qr') || c.includes('code') || c.includes('ticket') || c.includes('id')) emailIdx = idx;
                         
                         if (c.includes('school') || c.includes('org') || c.includes('company') || c.includes('building') || c.includes('group') || c.includes('department')) schoolIdx = idx;
                     });
 
-                    // Check if headers matched at least one identifier field
                     const hasHeaderMatch = (firstNameIdx !== -1 || lastNameIdx !== -1 || fullNameIdx !== -1 || emailIdx !== -1);
                     const dataStartIdx = hasHeaderMatch ? 1 : 0;
 
@@ -468,7 +627,6 @@
                             if (emailIdx !== -1 && row[emailIdx]) email = row[emailIdx].trim().toLowerCase();
                             if (schoolIdx !== -1 && row[schoolIdx]) school = row[schoolIdx].trim();
                         } else {
-                            // Smart Positional Content Detection Fallback (When CSV has no standard headers)
                             row.forEach((cell, idx) => {
                                 const val = cell ? cell.trim() : '';
                                 if (!val) return;
@@ -485,14 +643,13 @@
                             });
                         }
 
-                        // Final check to construct valid record
                         if (firstName || lastName || email) {
                             const docId = (email || `${firstName}_${lastName}_${i}`).replace(/[^a-zA-Z0-9_-]/g, '_');
                             batchDocData.push({
                                 id: docId,
                                 firstName: firstName || 'Attendee',
                                 lastName: lastName || '',
-                                email: email || '',
+                                email: email || docId,
                                 school: school || 'General',
                                 checkedIn: false,
                                 checkInTime: null,
@@ -509,24 +666,38 @@
                         return;
                     }
 
-                    // Save batch to Firestore
-                    showDebug(`Uploading ${batchDocData.length} records to real-time database session (${eventCode})...`, false);
-                    let batch = writeBatch(db);
-                    let count = 0;
-                    for (const item of batchDocData) {
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
-                        batch.set(docRef, item, { merge: true });
-                        count++;
-                        if (count % 400 === 0) {
-                            await batch.commit();
-                            batch = writeBatch(db);
+                    showDebug(`Loading ${batchDocData.length} records...`, false);
+                    
+                    if (isCloudConnected && db) {
+                        let batch = writeBatch(db);
+                        let count = 0;
+                        for (const item of batchDocData) {
+                            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
+                            batch.set(docRef, item, { merge: true });
+                            count++;
+                            if (count % 400 === 0) {
+                                await batch.commit();
+                                batch = writeBatch(db);
+                            }
                         }
-                    }
-                    if (count % 400 !== 0) {
-                        await batch.commit();
+                        if (count % 400 !== 0) {
+                            await batch.commit();
+                        }
+                    } else {
+                        // Merge locally
+                        batchDocData.forEach(item => {
+                            const existingIdx = attendees.findIndex(a => a.id === item.id);
+                            if (existingIdx >= 0) {
+                                attendees[existingIdx] = { ...attendees[existingIdx], ...item };
+                            } else {
+                                attendees.push(item);
+                            }
+                        });
+                        saveToLocalStorage();
+                        updateView();
                     }
 
-                    showDebug(` Successfully loaded and synced ${batchDocData.length} attendees across all check-in stations!`, false);
+                    showDebug(`Successfully loaded and synced ${batchDocData.length} attendees!`, false);
                     fileStatus.textContent = `Event "${eventCode}" actively syncing ${batchDocData.length} attendees.`;
                     fileStatus.className = "text-emerald-600 font-medium text-sm mt-1";
                     csvFileInput.value = '';
@@ -538,17 +709,354 @@
             reader.readAsText(file);
         });
 
-        const walkinModal = document.getElementById('walkin-modal');
-        const eventModal = document.getElementById('event-modal');
-        const shareModal = document.getElementById('share-modal');
-        const confirmModal = document.getElementById('confirm-modal');
-        const btnShareSession = document.getElementById('btn-share-session');
-        const shareLinkInput = document.getElementById('share-link-input');
-        const btnCopyShareLink = document.getElementById('btn-copy-share-link');
-        const copyStatusMsg = document.getElementById('copy-status-msg');
+        async function populateCameraList() {
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                cameraSelect.innerHTML = '';
+                if (devices && devices.length > 0) {
+                    devices.forEach((dev, idx) => {
+                        const opt = document.createElement('option');
+                        opt.value = dev.id;
+                        opt.textContent = dev.label || `Camera ${idx + 1}`;
+                        cameraSelect.appendChild(opt);
+                    });
+                } else {
+                    cameraSelect.innerHTML = '<option value="">No camera found</option>';
+                }
+            } catch (err) {
+                cameraSelect.innerHTML = '<option value="">Camera access restricted</option>';
+            }
+        }
+
+        btnToggleScanner.addEventListener('click', () => {
+            initAudio();
+            if (isScannerRunning) {
+                stopScanner();
+            } else {
+                startScanner();
+            }
+        });
+
+        async function startScanner() {
+            try {
+                const selectedCamId = cameraSelect.value;
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("reader");
+                }
+                const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+                const cameraConfig = selectedCamId ? { deviceId: { exact: selectedCamId } } : { facingMode: "environment" };
+
+                await html5QrCode.start(
+                    cameraConfig,
+                    config,
+                    (decodedText) => handleScanSuccess(decodedText),
+                    (errorMessage) => {}
+                );
+
+                isScannerRunning = true;
+                scannerBtnText.textContent = "Stop";
+                btnToggleScanner.className = "px-3.5 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap";
+                btnToggleScanner.querySelector('i').className = "fa-solid fa-stop";
+                cameraError.classList.add('hidden');
+            } catch (err) {
+                console.error("Scanner Error:", err);
+                cameraError.textContent = `Camera Error: ${err.message || 'Permission denied'}`;
+                cameraError.classList.remove('hidden');
+            }
+        }
+
+        async function stopScanner() {
+            if (html5QrCode && isScannerRunning) {
+                await html5QrCode.stop();
+                isScannerRunning = false;
+                scannerBtnText.textContent = "Start";
+                btnToggleScanner.className = "px-3.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap";
+                btnToggleScanner.querySelector('i').className = "fa-solid fa-play";
+            }
+        }
+
+        function handleScanSuccess(decodedText) {
+            const now = Date.now();
+            if (decodedText === lastScanText && (now - lastScanTime) < 2500) {
+                return; // Debounce rapid repeat scans
+            }
+            lastScanText = decodedText;
+            lastScanTime = now;
+            processCheckIn(decodedText);
+        }
+
+        async function processCheckIn(queryStr) {
+            if (!queryStr || !queryStr.trim()) return;
+            const text = queryStr.trim().toLowerCase();
+
+            // Match by email, id, or name
+            let matched = attendees.find(a => 
+                (a.email && a.email.toLowerCase() === text) ||
+                (a.id && a.id.toLowerCase() === text) ||
+                (`${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase() === text)
+            );
+
+            // Fuzzy fallback search if exact match isn't found
+            if (!matched) {
+                matched = attendees.find(a => 
+                    (a.email && a.email.toLowerCase().includes(text)) ||
+                    (`${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase().includes(text))
+                );
+            }
+
+            if (matched) {
+                if (matched.checkedIn) {
+                    playBeep('warning');
+                    showAlertBox('warning', 'Already Checked In', `${matched.firstName} ${matched.lastName} was previously checked in at ${matched.checkInTime || 'an earlier time'} (${matched.checkedInBy || 'Station'}).`);
+                } else {
+                    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    matched.checkedIn = true;
+                    matched.checkInTime = timeStr;
+                    matched.checkedInBy = stationName;
+
+                    if (isCloudConnected && db) {
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', matched.id);
+                        await setDoc(docRef, matched, { merge: true });
+                    } else {
+                        saveToLocalStorage();
+                        updateView();
+                    }
+
+                    playBeep('success');
+                    showAlertBox('success', 'Check-In Successful!', `WELCOME: ${matched.firstName} ${matched.lastName} (${matched.school || 'General'})`);
+                }
+            } else {
+                playBeep('error');
+                showAlertBox('error', 'Attendee Not Found', `No matching record found for "${queryStr}". Use Walk-in button to register them on the spot.`);
+            }
+        }
+
+        function showAlertBox(type, title, msg) {
+            alertBox.className = "p-6 rounded-2xl shadow-sm border transition-all duration-300 min-h-[160px] flex items-center justify-center ";
+            if (type === 'success') {
+                alertBox.classList.add('bg-emerald-500', 'border-emerald-600', 'text-white');
+                alertContent.innerHTML = `
+                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <h3 class="text-xl font-bold">${title}</h3>
+                    <p class="text-sm text-emerald-50 font-medium">${msg}</p>
+                `;
+            } else if (type === 'warning') {
+                alertBox.classList.add('bg-amber-500', 'border-amber-600', 'text-white');
+                alertContent.innerHTML = `
+                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                    </div>
+                    <h3 class="text-xl font-bold">${title}</h3>
+                    <p class="text-sm text-amber-50 font-medium">${msg}</p>
+                `;
+            } else {
+                alertBox.classList.add('bg-red-500', 'border-red-600', 'text-white');
+                alertContent.innerHTML = `
+                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </div>
+                    <h3 class="text-xl font-bold">${title}</h3>
+                    <p class="text-sm text-red-50 font-medium">${msg}</p>
+                `;
+            }
+        }
+
+        function updateView() {
+            // Update Stats
+            const total = attendees.length;
+            const checkedInCount = attendees.filter(a => a.checkedIn).length;
+            const remainingCount = total - checkedInCount;
+            const walkinsCount = attendees.filter(a => a.isWalkIn).length;
+
+            statTotal.textContent = total;
+            statCheckedIn.textContent = checkedInCount;
+            statRemaining.textContent = remainingCount;
+            statWalkins.textContent = walkinsCount;
+
+            btnExport.disabled = total === 0;
+            if (total > 0) {
+                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-800 text-white hover:bg-slate-900 cursor-pointer shadow-sm";
+            } else {
+                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-200 text-slate-400 cursor-not-allowed";
+            }
+
+            // Filter & Search
+            let filtered = attendees.filter(a => {
+                if (currentFilter === 'checked') return a.checkedIn;
+                if (currentFilter === 'pending') return !a.checkedIn;
+                return true;
+            });
+
+            if (searchTerm.trim()) {
+                const term = searchTerm.toLowerCase().trim();
+                filtered = filtered.filter(a => 
+                    (a.firstName && a.firstName.toLowerCase().includes(term)) ||
+                    (a.lastName && a.lastName.toLowerCase().includes(term)) ||
+                    (a.email && a.email.toLowerCase().includes(term)) ||
+                    (a.school && a.school.toLowerCase().includes(term))
+                );
+            }
+
+            if (filtered.length === 0) {
+                tableContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
+                        <i class="fa-solid fa-users-slash text-4xl mb-3 opacity-30"></i>
+                        <p class="text-base font-semibold text-slate-600">${attendees.length === 0 ? 'No attendees loaded' : 'No matching attendees'}</p>
+                        <p class="text-xs text-slate-400 mt-1 max-w-sm">${attendees.length === 0 ? 'Upload a CSV/TXT list or click "Walk-in" to add attendees.' : 'Try adjusting your search filter.'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <table class="w-full text-left border-collapse min-w-[550px]">
+                    <thead>
+                        <tr class="border-b border-slate-200 bg-slate-100/70 text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-sm">
+                            <th class="py-3 px-4">Attendee Name</th>
+                            <th class="py-3 px-4">Email / ID</th>
+                            <th class="py-3 px-4">School / Org</th>
+                            <th class="py-3 px-4">Status</th>
+                            <th class="py-3 px-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-xs sm:text-sm">
+            `;
+
+            filtered.forEach(item => {
+                html += `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="py-3 px-4 font-semibold text-slate-800">
+                            ${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}
+                            ${item.isWalkIn ? '<span class="ml-1.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded font-bold uppercase">Walk-in</span>' : ''}
+                        </td>
+                        <td class="py-3 px-4 text-slate-500 font-mono text-xs">${escapeHtml(item.email || '-')}</td>
+                        <td class="py-3 px-4 text-slate-600">${escapeHtml(item.school || 'General')}</td>
+                        <td class="py-3 px-4">
+                            ${item.checkedIn ? 
+                                `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    <i class="fa-solid fa-check text-[10px]"></i> Checked In ${item.checkInTime ? `<span class="opacity-75 font-normal">(${item.checkInTime})</span>` : ''}
+                                 </span>` : 
+                                `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                    Pending
+                                 </span>`
+                            }
+                        </td>
+                        <td class="py-3 px-4 text-right">
+                            <button onclick="toggleAttendeeCheckIn('${item.id}')" class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                item.checkedIn ? 
+                                'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200' : 
+                                'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                            }">
+                                ${item.checkedIn ? 'Undo' : 'Check In'}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table>`;
+            tableContainer.innerHTML = html;
+        }
+
+        window.toggleAttendeeCheckIn = async function(id) {
+            initAudio();
+            const item = attendees.find(a => a.id === id);
+            if (!item) return;
+
+            item.checkedIn = !item.checkedIn;
+            if (item.checkedIn) {
+                item.checkInTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                item.checkedInBy = stationName;
+                playBeep('success');
+            } else {
+                item.checkInTime = null;
+                item.checkedInBy = null;
+            }
+
+            if (isCloudConnected && db) {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
+                await setDoc(docRef, item, { merge: true });
+            } else {
+                saveToLocalStorage();
+                updateView();
+            }
+        };
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        manualScanForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            initAudio();
+            const val = manualScanInput.value;
+            if (val) {
+                processCheckIn(val);
+                manualScanInput.value = '';
+            }
+        });
+
+        // Walk-in Modal Handlers
+        btnWalkin.addEventListener('click', () => {
+            initAudio();
+            walkinFirst.value = '';
+            walkinLast.value = '';
+            walkinEmail.value = '';
+            walkinSchool.value = '';
+            walkinModal.classList.remove('hidden');
+        });
+
+        btnCloseModal.addEventListener('click', () => walkinModal.classList.add('hidden'));
+        btnCancelWalkin.addEventListener('click', () => walkinModal.classList.add('hidden'));
+
+        btnSaveWalkin.addEventListener('click', async () => {
+            const first = walkinFirst.value.trim();
+            const last = walkinLast.value.trim();
+            const email = walkinEmail.value.trim();
+            const school = walkinSchool.value.trim();
+
+            if (!first) {
+                alertBox.className = "p-4 rounded-xl bg-red-100 text-red-800 border border-red-200 text-sm font-semibold mb-2";
+                return;
+            }
+
+            const docId = `walkin_${Date.now()}`;
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            const newWalkin = {
+                id: docId,
+                firstName: first,
+                lastName: last,
+                email: email || `${first.toLowerCase()}_${Date.now()}@walkin.local`,
+                school: school || 'Walk-in Guest',
+                checkedIn: true,
+                checkInTime: timeStr,
+                checkedInBy: stationName,
+                isWalkIn: true,
+                eventCode: eventCode,
+                createdAt: new Date().toISOString()
+            };
+
+            if (isCloudConnected && db) {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', docId);
+                await setDoc(docRef, newWalkin);
+            } else {
+                attendees.push(newWalkin);
+                saveToLocalStorage();
+                updateView();
+            }
+
+            playBeep('success');
+            walkinModal.classList.add('hidden');
+            showAlertBox('success', 'Walk-in Checked In!', `REGISTERED: ${first} ${last}`);
+        });
 
         // Share Session Modal Trigger
         btnShareSession.addEventListener('click', () => {
+            initAudio();
             const currentUrl = window.location.href.split('?')[0];
             const shareableUrl = `${currentUrl}?event=${encodeURIComponent(eventCode)}`;
             shareLinkInput.value = shareableUrl;
@@ -569,6 +1077,7 @@
 
         // Event Code Modal
         btnEventCode.addEventListener('click', () => {
+            initAudio();
             document.getElementById('event-code-input').value = eventCode;
             eventModal.classList.remove('hidden');
         });
@@ -592,6 +1101,7 @@
 
         // Clear Data Handler
         btnClear.addEventListener('click', () => {
+            initAudio();
             if (attendees.length === 0) return;
             confirmModal.classList.remove('hidden');
         });
@@ -599,20 +1109,26 @@
         document.getElementById('confirm-ok-btn').addEventListener('click', async () => {
             confirmModal.classList.add('hidden');
             try {
-                showDebug("Clearing event data across cloud database...", false);
-                let batch = writeBatch(db);
-                let count = 0;
-                for (const a of attendees) {
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', a.id);
-                    batch.delete(docRef);
-                    count++;
-                    if (count % 400 === 0) {
-                        await batch.commit();
-                        batch = writeBatch(db);
+                showDebug("Clearing event data...", false);
+                if (isCloudConnected && db) {
+                    let batch = writeBatch(db);
+                    let count = 0;
+                    for (const a of attendees) {
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', a.id);
+                        batch.delete(docRef);
+                        count++;
+                        if (count % 400 === 0) {
+                            await batch.commit();
+                            batch = writeBatch(db);
+                        }
                     }
-                }
-                if (count % 400 !== 0) {
-                    await batch.commit();
+                    if (count % 400 !== 0) {
+                        await batch.commit();
+                    }
+                } else {
+                    attendees = [];
+                    saveToLocalStorage();
+                    updateView();
                 }
                 showDebug("Event data cleared successfully.", false);
             } catch (err) {
@@ -623,6 +1139,7 @@
 
         // Export List to CSV
         btnExport.addEventListener('click', () => {
+            initAudio();
             if (attendees.length === 0) return;
             let csv = 'First Name,Last Name,Email,School/Org,Checked In,Check-in Time,Checked-in By Station,Walk-in\n';
             attendees.forEach(a => {
