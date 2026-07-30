@@ -52,6 +52,12 @@
                     <span id="event-code-text">Event Code</span>
                 </button>
 
+                <!-- Share Session Link Button -->
+                <button id="btn-share-session" class="flex items-center gap-1.5 px-3 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-purple-100 transition-colors">
+                    <i class="fa-solid fa-share-nodes"></i>
+                    <span>Share / Sync Devices</span>
+                </button>
+
                 <!-- CSV Upload Button -->
                 <label class="flex items-center gap-2 px-3.5 py-2 bg-blue-600 text-white rounded-lg shadow-sm cursor-pointer hover:bg-blue-700 transition-colors text-xs sm:text-sm font-medium">
                     <i class="fa-solid fa-upload"></i>
@@ -257,6 +263,46 @@
         </div>
     </div>
 
+    <!-- Share Session Modal -->
+    <div id="share-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-100">
+            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-network-wired text-purple-600"></i>
+                    Connect Other Computers / Stations
+                </h3>
+                <button id="btn-close-share-modal" class="text-slate-400 hover:text-slate-700 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="bg-purple-50 p-3.5 rounded-xl border border-purple-100 text-xs text-purple-900 space-y-1.5">
+                    <div class="font-bold text-sm text-purple-800 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-info"></i> How multi-station sync works:
+                    </div>
+                    <p>1. Open this website on any other laptop, tablet, or phone.</p>
+                    <p>2. Click <strong>"Event Code"</strong> on that device.</p>
+                    <p>3. Enter code: <span id="share-modal-code-display" class="font-mono font-bold text-purple-900 bg-purple-200 px-1.5 py-0.5 rounded">MAIN-EVENT</span></p>
+                    <p class="text-[11px] text-purple-700 pt-1 border-t border-purple-200">⚡ All attendee uploads, scans, and walk-in check-ins update instantly on all connected screens.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Direct Share Link</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="share-link-input" readonly class="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-600 select-all focus:outline-none">
+                        <button id="btn-copy-share-link" class="px-3.5 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                            <i class="fa-solid fa-copy"></i> Copy Link
+                        </button>
+                    </div>
+                    <span id="copy-status-msg" class="text-[11px] text-emerald-600 font-medium hidden mt-1">Copied to clipboard! Send this link to other station operators.</span>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <button id="btn-done-share" class="px-4 py-2 bg-slate-800 text-white hover:bg-slate-900 rounded-lg text-sm font-semibold">Done</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirm Modal -->
     <div id="confirm-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-slate-100 p-5 space-y-4">
@@ -293,9 +339,13 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
+        // Read Event Code from URL query param if present (e.g. ?event=MY-EVENT)
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryEvent = urlParams.get('event');
+
         // Application State Variables
         let attendees = [];
-        let eventCode = localStorage.getItem('qr_event_code') || 'MAIN-EVENT';
+        let eventCode = (queryEvent || localStorage.getItem('qr_event_code') || 'MAIN-EVENT').toUpperCase().trim();
         let stationName = localStorage.getItem('qr_station_name') || 'Door 1';
         let currentFilter = 'all';
         let searchTerm = '';
@@ -308,156 +358,7 @@
         let currentUser = null;
 
         // UI Element References
-        const fileStatus = document.getElementById('file-status');
-        const syncStatusBadge = document.getElementById('sync-status-badge');
-        const debugBanner = document.getElementById('debug-banner');
-        const csvFileInput = document.getElementById('csv-file');
-        const btnExport = document.getElementById('btn-export');
-        const btnWalkin = document.getElementById('btn-walkin');
-        const btnClear = document.getElementById('btn-clear');
-        const btnToggleScanner = document.getElementById('btn-toggle-scanner');
-        const scannerBtnText = document.getElementById('scanner-btn-text');
-        const cameraSelect = document.getElementById('camera-select');
-        const readerPlaceholder = document.getElementById('reader-placeholder');
-        const cameraError = document.getElementById('camera-error');
-        const searchInput = document.getElementById('search-input');
-        const tableContainer = document.getElementById('table-container');
-        const alertBox = document.getElementById('alert-box');
-        const alertContent = document.getElementById('alert-content');
-        const stationNameInput = document.getElementById('station-name-input');
-        const btnEventCode = document.getElementById('btn-event-code');
-        const eventCodeText = document.getElementById('event-code-text');
-
-        // Stats UI elements
-        const statTotal = document.getElementById('stat-total');
-        const statCheckedIn = document.getElementById('stat-checked-in');
-        const statRemaining = document.getElementById('stat-remaining');
-        const statWalkins = document.getElementById('stat-walkins');
-
-        async function initializeAppAuthAndSync() {
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (err) {
-                console.warn("Auth warning, falling back to anonymous auth:", err);
-                try { await signInAnonymously(auth); } catch (e) {}
-            }
-
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    currentUser = user;
-                    setupRealtimeSync();
-                }
-            });
-        }
-
-        // Firestore Strict Path Rule 1: /artifacts/{appId}/public/data/{collectionName}
-        function getAttendeesCollectionRef() {
-            return collection(db, 'artifacts', appId, 'public', 'data', 'attendees');
-        }
-
-        // Realtime Firestore Listener Setup (No compound queries - RULE 2)
-        function setupRealtimeSync() {
-            if (!currentUser) return;
-            if (unsubscribeListener) unsubscribeListener();
-
-            updateSyncBadge('connecting');
-            const colRef = getAttendeesCollectionRef();
-
-            unsubscribeListener = onSnapshot(colRef, (snapshot) => {
-                const fetched = [];
-                snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    // Filter by event code in JS memory
-                    if (data.eventCode === eventCode) {
-                        fetched.push({ id: docSnap.id, ...data });
-                    }
-                });
-
-                attendees = fetched;
-                updateSyncBadge('synced');
-                updateView();
-            }, (error) => {
-                console.error("Realtime sync error:", error);
-                updateSyncBadge('error');
-                showDebug(`Real-time connection warning: ${error.message}`, true);
-            });
-        }
-
-        function updateSyncBadge(status) {
-            if (status === 'synced') {
-                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200";
-                syncStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 pulse-subtle"></span> Live Sync (${eventCode})`;
-            } else if (status === 'connecting') {
-                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200";
-                syncStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-500 pulse-subtle"></span> Connecting...`;
-            } else {
-                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200";
-                syncStatusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> Offline / Reconnecting`;
-            }
-        }
-
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-        }
-
-        function playBeep(type = 'success') {
-            try {
-                if (!audioCtx) initAudio();
-                if (!audioCtx) return;
-                
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.type = 'sine';
-
-                if (type === 'success') {
-                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.12);
-                    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-                    osc.start(audioCtx.currentTime);
-                    osc.stop(audioCtx.currentTime + 0.2);
-                } else if (type === 'warning') {
-                    // Double warning beep
-                    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-                    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                    osc.start(audioCtx.currentTime);
-                    osc.stop(audioCtx.currentTime + 0.1);
-                    
-                    const osc2 = audioCtx.createOscillator();
-                    const gain2 = audioCtx.createGain();
-                    osc2.connect(gain2);
-                    gain2.connect(audioCtx.destination);
-                    osc2.frequency.setValueAtTime(440, audioCtx.currentTime + 0.15);
-                    gain2.gain.setValueAtTime(0.12, audioCtx.currentTime + 0.15);
-                    gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                    osc2.start(audioCtx.currentTime + 0.15);
-                    osc2.stop(audioCtx.currentTime + 0.3);
-                } else {
-                    // Error tone
-                    osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime + 0.25);
-                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-                    osc.start(audioCtx.currentTime);
-                    osc.stop(audioCtx.currentTime + 0.25);
-                }
-            } catch (e) {
-                console.warn("Audio play error:", e);
-            }
-        }
-
+        // Improved CSV Array Parser supporting standard quotes, escaping, and line breaks
         function csvToArray(strData, strDelimiter = ",") {
             const objPattern = new RegExp(
                 ("(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
@@ -486,7 +387,7 @@
             return arrData;
         }
 
-        // Handle File Selection
+        // Handle File Selection with Fail-Safe Auto Column Mapper
         csvFileInput.addEventListener('change', async function(e) {
             initAudio();
             const file = e.target.files[0];
@@ -502,91 +403,93 @@
             reader.onload = async function(evt) {
                 try {
                     let text = evt.target.result.replace(/^\ufeff/, '');
-                    const firstLine = text.split('\n')[0] || '';
-                    let delimiter = ',';
-                    if ((firstLine.match(/\t/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = '\t';
+                    // Normalize line endings
+                    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-                    const rawRows = csvToArray(text, delimiter);
-                    if (rawRows.length < 2) {
-                        showDebug(`⚠️ The file appears to be empty or missing standard headers.`);
+                    const lines = text.split('\n').filter(l => l.trim() !== '');
+                    if (lines.length === 0) {
+                        showDebug(`⚠️ The uploaded file is empty.`);
                         return;
                     }
 
-                    // Qualtrics / Multi-header detection
-                    let dataStartIdx = 1;
-                    for (let i = 0; i < Math.min(6, rawRows.length); i++) {
-                        const rowStr = rawRows[i].join('').toLowerCase();
-                        if (rowStr.includes('{"importid"') || rowStr.includes('{"qid"')) {
-                            dataStartIdx = i + 1;
-                            break;
-                        }
+                    let delimiter = ',';
+                    const firstLine = lines[0];
+                    if ((firstLine.match(/\t/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = '\t';
+                    if ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = ';';
+
+                    const rawRows = csvToArray(text, delimiter);
+                    if (rawRows.length === 0) {
+                        showDebug(`⚠️ Could not parse CSV rows.`);
+                        return;
                     }
 
-                    let lastNameIndices = [];
-                    let firstNameIndices = [];
-                    let emailIndices = [];
-                    let parentGuardIndices = [];
-                    let fullNameIndices = [];
-                    let schoolIndices = [];
+                    // Flexible Column Mapping Strategy
+                    let firstNameIdx = -1, lastNameIdx = -1, fullNameIdx = -1, emailIdx = -1, schoolIdx = -1;
+                    
+                    // Header Inspection
+                    const headerRow = rawRows[0];
+                    headerRow.forEach((col, idx) => {
+                        if (!col) return;
+                        const c = col.toLowerCase().trim();
+                        
+                        if (c.includes('first') || c.includes('fname') || c.includes('given')) firstNameIdx = idx;
+                        else if (c.includes('last') || c.includes('lname') || c.includes('surname') || c.includes('family')) lastNameIdx = idx;
+                        else if ((c.includes('name') || c.includes('attendee') || c.includes('participant') || c.includes('guest') || c.includes('user')) && !c.includes('school') && !c.includes('org') && !c.includes('company')) fullNameIdx = idx;
+                        
+                        if (c.includes('email') || c.includes('mail') || c.includes('qr') || c.includes('code') || c.includes('ticket')) emailIdx = idx;
+                        
+                        if (c.includes('school') || c.includes('org') || c.includes('company') || c.includes('building') || c.includes('group') || c.includes('department')) schoolIdx = idx;
+                    });
 
-                    for (let r = 0; r < dataStartIdx; r++) {
-                        rawRows[r].forEach((col, idx) => {
-                            if (!col) return;
-                            const c = col.toLowerCase().trim();
-                            if (c.includes('last') || c === 'q3' || c.includes('recipientlastname')) lastNameIndices.push(idx);
-                            if (c.includes('first') || c === 'q2' || c.includes('recipientfirstname')) firstNameIndices.push(idx);
-                            if (c.includes('email') || c.includes('qr') || c === 'q5' || c.includes('recipientemail')) emailIndices.push(idx);
-                            if (c.includes('parent/guard')) parentGuardIndices.push(idx);
-                            if (c.includes('school') || c.includes('building') || c.includes('org')) schoolIndices.push(idx);
-                            if (c.includes('name') && !c.includes('school') && !c.includes('teacher') && !c.includes('first') && !c.includes('last')) fullNameIndices.push(idx);
-                        });
-                    }
-
-                    const getValue = (indices, row) => {
-                        for (let idx of indices) {
-                            if (row[idx] && row[idx].trim() !== '') return row[idx].trim();
-                        }
-                        return '';
-                    };
-
-                    const getSchoolValue = (indices, row) => {
-                        let vals = [];
-                        for (let idx of indices) {
-                            let val = row[idx] ? row[idx].trim() : '';
-                            if (val) vals.push(val);
-                        }
-                        let textVal = vals.find(v => isNaN(v) && v.length > 1);
-                        return textVal || vals[0] || '';
-                    };
+                    // Check if headers matched at least one identifier field
+                    const hasHeaderMatch = (firstNameIdx !== -1 || lastNameIdx !== -1 || fullNameIdx !== -1 || emailIdx !== -1);
+                    const dataStartIdx = hasHeaderMatch ? 1 : 0;
 
                     const batchDocData = [];
                     for (let i = dataStartIdx; i < rawRows.length; i++) {
                         const row = rawRows[i];
                         if (!row || row.length === 0 || row.every(c => !c || c.trim() === '')) continue;
 
-                        let lastName = getValue(lastNameIndices, row);
-                        let firstName = getValue(firstNameIndices, row);
-                        let email = getValue(emailIndices, row).toLowerCase();
-                        let school = getSchoolValue(schoolIndices, row);
+                        let firstName = '';
+                        let lastName = '';
+                        let email = '';
+                        let school = '';
 
-                        if (!firstName && parentGuardIndices.length > 0) {
-                            firstName = row[parentGuardIndices[0]] ? row[parentGuardIndices[0]].trim() : '';
-                        }
-                        if (!lastName && parentGuardIndices.length > 1) {
-                            lastName = row[parentGuardIndices[1]] ? row[parentGuardIndices[1]].trim() : '';
-                        }
-                        if (!firstName && !lastName && fullNameIndices.length > 0) {
-                            const full = getValue(fullNameIndices, row);
-                            const parts = full.split(' ');
-                            firstName = parts[0] || '';
-                            lastName = parts.slice(1).join(' ') || '';
+                        if (hasHeaderMatch) {
+                            if (firstNameIdx !== -1 && row[firstNameIdx]) firstName = row[firstNameIdx].trim();
+                            if (lastNameIdx !== -1 && row[lastNameIdx]) lastName = row[lastNameIdx].trim();
+                            
+                            if (!firstName && !lastName && fullNameIdx !== -1 && row[fullNameIdx]) {
+                                const parts = row[fullNameIdx].trim().split(' ');
+                                firstName = parts[0] || '';
+                                lastName = parts.slice(1).join(' ') || '';
+                            }
+
+                            if (emailIdx !== -1 && row[emailIdx]) email = row[emailIdx].trim().toLowerCase();
+                            if (schoolIdx !== -1 && row[schoolIdx]) school = row[schoolIdx].trim();
+                        } else {
+                            // Smart Positional Content Detection Fallback (When CSV has no standard headers)
+                            row.forEach((cell, idx) => {
+                                const val = cell ? cell.trim() : '';
+                                if (!val) return;
+                                
+                                if (val.includes('@') && val.includes('.') && !email) {
+                                    email = val.toLowerCase();
+                                } else if (!firstName && isNaN(val) && val.length > 1) {
+                                    const parts = val.split(' ');
+                                    firstName = parts[0] || '';
+                                    lastName = parts.slice(1).join(' ') || '';
+                                } else if (!school && isNaN(val)) {
+                                    school = val;
+                                }
+                            });
                         }
 
+                        // Final check to construct valid record
                         if (firstName || lastName || email) {
-                            // Generate robust record ID
                             const docId = (email || `${firstName}_${lastName}_${i}`).replace(/[^a-zA-Z0-9_-]/g, '_');
                             batchDocData.push({
-                                docId,
+                                id: docId,
                                 firstName: firstName || 'Attendee',
                                 lastName: lastName || '',
                                 email: email || '',
@@ -602,16 +505,16 @@
                     }
 
                     if (batchDocData.length === 0) {
-                        showDebug("⚠️ Could not locate valid attendee records in CSV columns.", true);
+                        showDebug("⚠️ Could not locate valid attendee records in CSV. Please verify file content.", true);
                         return;
                     }
 
                     // Save batch to Firestore
-                    showDebug(`Uploading ${batchDocData.length} records to real-time cloud database...`, false);
+                    showDebug(`Uploading ${batchDocData.length} records to real-time database session (${eventCode})...`, false);
                     let batch = writeBatch(db);
                     let count = 0;
                     for (const item of batchDocData) {
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.docId);
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
                         batch.set(docRef, item, { merge: true });
                         count++;
                         if (count % 400 === 0) {
@@ -626,6 +529,7 @@
                     showDebug(` Successfully loaded and synced ${batchDocData.length} attendees across all check-in stations!`, false);
                     fileStatus.textContent = `Event "${eventCode}" actively syncing ${batchDocData.length} attendees.`;
                     fileStatus.className = "text-emerald-600 font-medium text-sm mt-1";
+                    csvFileInput.value = '';
                 } catch (err) {
                     console.error("CSV Parse Error:", err);
                     showDebug(`Error parsing CSV file: ${err.message}`, true);
@@ -634,354 +538,33 @@
             reader.readAsText(file);
         });
 
-        async function handleCheckInScan(rawText) {
-            if (!rawText || !rawText.trim()) return;
-            const text = rawText.trim();
-
-            const now = Date.now();
-            if (text === lastScanText && now - lastScanTime < 3000) {
-                return; // Prevent accidental duplicate scanning within 3s
-            }
-            lastScanText = text;
-            lastScanTime = now;
-
-            const target = text.toLowerCase();
-            // Match against email, full name, ID, or substring
-            let match = attendees.find(a => 
-                (a.email && a.email.toLowerCase() === target) ||
-                (a.id && a.id.toLowerCase() === target) ||
-                (`${a.firstName} ${a.lastName}`.toLowerCase() === target)
-            );
-
-            if (!match) {
-                // Partial search fallback
-                match = attendees.find(a => 
-                    (a.email && target.includes(a.email.toLowerCase())) ||
-                    (`${a.firstName} ${a.lastName}`.toLowerCase().includes(target))
-                );
-            }
-
-            if (!match) {
-                playBeep('error');
-                renderAlertBox('not_found', null, text);
-                return;
-            }
-
-            if (match.checkedIn) {
-                playBeep('warning');
-                renderAlertBox('already_checked_in', match);
-                return;
-            }
-
-            // Perform Check-in via Firestore doc update
-            try {
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', match.id);
-                
-                await updateDoc(docRef, {
-                    checkedIn: true,
-                    checkInTime: timestamp,
-                    checkedInBy: stationName
-                });
-
-                playBeep('success');
-                renderAlertBox('success', { ...match, checkedIn: true, checkInTime: timestamp, checkedInBy: stationName });
-            } catch (err) {
-                console.error("Check-in update error:", err);
-                playBeep('error');
-                showDebug(`Failed to save check-in state: ${err.message}`, true);
-            }
-        }
-
-        // Render Feedback Alert Box
-        function renderAlertBox(status, attendee = null, rawQuery = '') {
-            alertBox.className = "p-6 rounded-2xl shadow-sm border transition-all duration-300 min-h-[160px] flex items-center justify-center ";
-            
-            if (status === 'success') {
-                alertBox.classList.add('bg-emerald-500', 'border-emerald-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-white mb-1">
-                        <i class="fa-solid fa-circle-check text-3xl"></i>
-                    </div>
-                    <h3 class="text-2xl font-black">${attendee.firstName} ${attendee.lastName}</h3>
-                    <p class="text-emerald-100 font-medium text-sm">${attendee.school || 'Registered Attendee'}</p>
-                    <div class="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-white/20 rounded-full text-xs font-semibold">
-                        <i class="fa-solid fa-clock"></i> Checked in at ${attendee.checkInTime} by ${attendee.checkedInBy}
-                    </div>
-                `;
-            } else if (status === 'already_checked_in') {
-                alertBox.classList.add('bg-amber-500', 'border-amber-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-white mb-1">
-                        <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold">ALREADY CHECKED IN</h3>
-                    <p class="text-amber-100 font-medium text-base">${attendee.firstName} ${attendee.lastName}</p>
-                    <p class="text-xs text-amber-100 mt-1">Checked in at ${attendee.checkInTime || 'Earlier'} by ${attendee.checkedInBy || 'Station'}</p>
-                `;
-            } else if (status === 'not_found') {
-                alertBox.classList.add('bg-red-500', 'border-red-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-white mb-1">
-                        <i class="fa-solid fa-user-xmark text-3xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold">Attendee Not Found</h3>
-                    <p class="text-red-100 text-xs truncate max-w-xs mt-1">Scanned: "${rawQuery}"</p>
-                    <button onclick="document.getElementById('btn-walkin').click()" class="mt-3 px-3 py-1.5 bg-white text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors">
-                        + Add as Walk-in
-                    </button>
-                `;
-            }
-        }
-
-        async function toggleCheckIn(id) {
-            initAudio();
-            const attendee = attendees.find(a => a.id === id);
-            if (!attendee) return;
-
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', id);
-            const newState = !attendee.checkedIn;
-            const timestamp = newState ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
-
-            try {
-                await updateDoc(docRef, {
-                    checkedIn: newState,
-                    checkInTime: timestamp,
-                    checkedInBy: newState ? stationName : null
-                });
-                if (newState) playBeep('success');
-            } catch (err) {
-                console.error("Toggle error:", err);
-                showDebug(`Error toggling check-in: ${err.message}`, true);
-            }
-        }
-        window.toggleCheckIn = toggleCheckIn;
-
-        function updateView() {
-            // Stats computation
-            const total = attendees.length;
-            const checked = attendees.filter(a => a.checkedIn).length;
-            const remaining = total - checked;
-            const walkins = attendees.filter(a => a.isWalkIn).length;
-
-            statTotal.textContent = total;
-            statCheckedIn.textContent = checked;
-            statRemaining.textContent = remaining;
-            statWalkins.textContent = walkins;
-
-            btnExport.disabled = total === 0;
-            if (total > 0) {
-                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold shadow-sm transition-colors bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer";
-            } else {
-                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-200 text-slate-400 cursor-not-allowed";
-            }
-
-            // Filter attendees
-            let list = attendees;
-            if (currentFilter === 'checked') list = list.filter(a => a.checkedIn);
-            if (currentFilter === 'pending') list = list.filter(a => !a.checkedIn);
-
-            if (searchTerm.trim() !== '') {
-                const term = searchTerm.toLowerCase().trim();
-                list = list.filter(a => 
-                    (a.firstName && a.firstName.toLowerCase().includes(term)) ||
-                    (a.lastName && a.lastName.toLowerCase().includes(term)) ||
-                    (a.email && a.email.toLowerCase().includes(term)) ||
-                    (a.school && a.school.toLowerCase().includes(term))
-                );
-            }
-
-            if (list.length === 0) {
-                tableContainer.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-                        <i class="fa-solid fa-user-slash text-3xl mb-2 opacity-40"></i>
-                        <p class="text-sm font-semibold text-slate-600">No matching attendees found</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Render table HTML
-            let html = `
-                <table class="w-full text-left border-collapse text-xs sm:text-sm">
-                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold sticky top-0 z-10">
-                        <tr>
-                            <th class="py-3 px-4">Attendee Name</th>
-                            <th class="py-3 px-4 hidden sm:table-cell">School / Org</th>
-                            <th class="py-3 px-4">Status</th>
-                            <th class="py-3 px-4 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-            `;
-
-            list.forEach(a => {
-                const isChecked = a.checkedIn;
-                html += `
-                    <tr class="hover:bg-slate-50/80 transition-colors ${isChecked ? 'bg-emerald-50/30' : ''}">
-                        <td class="py-3 px-4">
-                            <div class="font-bold text-slate-900 flex items-center gap-1.5">
-                                ${a.firstName} ${a.lastName}
-                                ${a.isWalkIn ? '<span class="px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded font-semibold">Walk-in</span>' : ''}
-                            </div>
-                            <div class="text-xs text-slate-400 font-mono">${a.email || 'No email'}</div>
-                        </td>
-                        <td class="py-3 px-4 hidden sm:table-cell text-slate-600">${a.school || '-'}</td>
-                        <td class="py-3 px-4">
-                            ${isChecked ? `
-                                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    <i class="fa-solid fa-check text-[10px]"></i> Checked In
-                                </span>
-                                <div class="text-[10px] text-slate-400 mt-0.5">${a.checkInTime || ''} (${a.checkedInBy || 'Station'})</div>
-                            ` : `
-                                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                                    Pending
-                                </span>
-                            `}
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                            <button onclick="toggleCheckIn('${a.id}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isChecked ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-600 text-white hover:bg-emerald-700'}">
-                                ${isChecked ? 'Undo' : 'Check In'}
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            html += `</tbody></table>`;
-            tableContainer.innerHTML = html;
-        }
-
-        async function populateCameraList() {
-            try {
-                if (typeof Html5Qrcode === 'undefined') return;
-                const devices = await Html5Qrcode.getCameras();
-                cameraSelect.innerHTML = '';
-                if (devices && devices.length > 0) {
-                    devices.forEach((device, index) => {
-                        const option = document.createElement('option');
-                        option.value = device.id;
-                        option.textContent = device.label || `Camera ${index + 1}`;
-                        cameraSelect.appendChild(option);
-                    });
-                } else {
-                    cameraSelect.innerHTML = '<option value="">No camera detected</option>';
-                }
-            } catch (err) {
-                cameraSelect.innerHTML = '<option value="">Default Camera</option>';
-            }
-        }
-
-        async function startScanner() {
-            initAudio();
-            if (isScannerRunning) return;
-            const cameraId = cameraSelect.value;
-            readerPlaceholder.classList.add('hidden');
-            cameraError.classList.add('hidden');
-
-            try {
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 220, height: 220 } };
-
-                await html5QrCode.start(
-                    cameraId ? { deviceId: { exact: cameraId } } : { facingMode: "environment" },
-                    config,
-                    (decodedText) => {
-                        handleCheckInScan(decodedText);
-                    },
-                    (errorMessage) => {}
-                );
-
-                isScannerRunning = true;
-                scannerBtnText.textContent = 'Stop Scanner';
-                btnToggleScanner.className = 'px-3.5 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap';
-            } catch (err) {
-                console.error("Camera start failed:", err);
-                cameraError.textContent = `Could not access camera: ${err.message || 'Permission denied'}`;
-                cameraError.classList.remove('hidden');
-            }
-        }
-
-        async function stopScanner() {
-            if (!isScannerRunning || !html5QrCode) return;
-            try {
-                await html5QrCode.stop();
-                html5QrCode.clear();
-            } catch (e) {}
-            isScannerRunning = false;
-            scannerBtnText.textContent = 'Start Scanner';
-            btnToggleScanner.className = 'px-3.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap';
-            readerPlaceholder.classList.remove('hidden');
-        }
-
-        btnToggleScanner.addEventListener('click', () => {
-            if (isScannerRunning) stopScanner(); else startScanner();
-        });
-
-        // Manual scan input handler
-        document.getElementById('manual-scan-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const input = document.getElementById('manual-scan-input');
-            if (input.value.trim()) {
-                handleCheckInScan(input.value);
-                input.value = '';
-            }
-        });
-
         const walkinModal = document.getElementById('walkin-modal');
         const eventModal = document.getElementById('event-modal');
+        const shareModal = document.getElementById('share-modal');
         const confirmModal = document.getElementById('confirm-modal');
+        const btnShareSession = document.getElementById('btn-share-session');
+        const shareLinkInput = document.getElementById('share-link-input');
+        const btnCopyShareLink = document.getElementById('btn-copy-share-link');
+        const copyStatusMsg = document.getElementById('copy-status-msg');
 
-        btnWalkin.addEventListener('click', () => {
-            initAudio();
-            walkinModal.classList.remove('hidden');
+        // Share Session Modal Trigger
+        btnShareSession.addEventListener('click', () => {
+            const currentUrl = window.location.href.split('?')[0];
+            const shareableUrl = `${currentUrl}?event=${encodeURIComponent(eventCode)}`;
+            shareLinkInput.value = shareableUrl;
+            document.getElementById('share-modal-code-display').textContent = eventCode;
+            copyStatusMsg.classList.add('hidden');
+            shareModal.classList.remove('hidden');
         });
-        document.getElementById('btn-close-modal').addEventListener('click', () => walkinModal.classList.add('hidden'));
-        document.getElementById('btn-cancel-walkin').addEventListener('click', () => walkinModal.classList.add('hidden'));
 
-        document.getElementById('btn-save-walkin').addEventListener('click', async () => {
-            const first = document.getElementById('walkin-first').value.trim();
-            const last = document.getElementById('walkin-last').value.trim();
-            const email = document.getElementById('walkin-email').value.trim();
-            const school = document.getElementById('walkin-school').value.trim();
+        document.getElementById('btn-close-share-modal').addEventListener('click', () => shareModal.classList.add('hidden'));
+        document.getElementById('btn-done-share').addEventListener('click', () => shareModal.classList.add('hidden'));
 
-            if (!first) {
-                alert("Please provide at least a First Name.");
-                return;
-            }
-
-            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const docId = `walkin_${Date.now()}`;
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', docId);
-
-            const newAttendee = {
-                firstName: first,
-                lastName: last || '',
-                email: email ? email.toLowerCase() : '',
-                school: school || 'Walk-in',
-                checkedIn: true,
-                checkInTime: timestamp,
-                checkedInBy: stationName,
-                isWalkIn: true,
-                eventCode: eventCode,
-                createdAt: new Date().toISOString()
-            };
-
-            try {
-                await setDoc(docRef, newAttendee);
-                playBeep('success');
-                renderAlertBox('success', { id: docId, ...newAttendee });
-                
-                // Reset modal inputs
-                document.getElementById('walkin-first').value = '';
-                document.getElementById('walkin-last').value = '';
-                document.getElementById('walkin-email').value = '';
-                document.getElementById('walkin-school').value = '';
-                walkinModal.classList.add('hidden');
-            } catch (err) {
-                console.error("Walk-in save error:", err);
-                showDebug(`Error saving walk-in: ${err.message}`, true);
-            }
+        btnCopyShareLink.addEventListener('click', () => {
+            shareLinkInput.select();
+            document.execCommand('copy');
+            copyStatusMsg.classList.remove('hidden');
+            setTimeout(() => copyStatusMsg.classList.add('hidden'), 3000);
         });
 
         // Event Code Modal
