@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Camera Scanner Library -->
     <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- PeerJS for Zero-Config Live P2P Cross-Device Sync -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         /* Custom smooth scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -56,6 +58,12 @@
                 <button id="btn-share-session" class="flex items-center gap-1.5 px-3 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-purple-100 transition-colors">
                     <i class="fa-solid fa-share-nodes"></i>
                     <span>Share / Sync Devices</span>
+                </button>
+
+                <!-- Cloud DB Settings Button -->
+                <button id="btn-custom-firebase" class="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs sm:text-sm font-medium hover:bg-amber-100 transition-colors" title="Optional: Configure custom Firebase Cloud DB">
+                    <i class="fa-solid fa-cloud"></i>
+                    <span class="hidden sm:inline">Cloud Setup</span>
                 </button>
 
                 <!-- CSV Upload Button -->
@@ -281,10 +289,9 @@
                     <div class="font-bold text-sm text-purple-800 flex items-center gap-1.5">
                         <i class="fa-solid fa-circle-info"></i> How multi-station sync works:
                     </div>
-                    <p>1. Open this website on any other laptop, tablet, or phone.</p>
-                    <p>2. Click <strong>"Event Code"</strong> on that device.</p>
-                    <p>3. Enter code: <span id="share-modal-code-display" class="font-mono font-bold text-purple-900 bg-purple-200 px-1.5 py-0.5 rounded">MAIN-EVENT</span></p>
-                    <p class="text-[11px] text-purple-700 pt-1 border-t border-purple-200">⚡ All attendee uploads, scans, and walk-in check-ins update instantly on all connected screens.</p>
+                    <p>1. Open this website link on any other laptop, tablet, or private browser window.</p>
+                    <p>2. Keep the Event Code as: <span id="share-modal-code-display" class="font-mono font-bold text-purple-900 bg-purple-200 px-1.5 py-0.5 rounded">MAIN-EVENT</span></p>
+                    <p class="text-[11px] text-purple-700 pt-1 border-t border-purple-200">⚡ Live P2P WebRTC Sync automatically streams attendee list and check-ins between windows instantly!</p>
                 </div>
 
                 <div>
@@ -319,31 +326,59 @@
         </div>
     </div>
 
+    <!-- Firebase Custom Config Modal -->
+    <div id="custom-firebase-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border border-slate-100">
+            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-cloud text-amber-600"></i>
+                    Custom Firebase Cloud Database Setup
+                </h3>
+                <button id="btn-close-firebase-modal" class="text-slate-400 hover:text-slate-700 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-3">
+                <p class="text-xs text-slate-600">By default, stations sync via zero-config <strong>P2P WebRTC</strong>. If you want persistent cloud storage on GitHub Pages, paste your Firebase config JSON below:</p>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Firebase Config Object / JSON</label>
+                    <textarea id="custom-firebase-json" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "..." }' class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+                <button id="btn-clear-firebase-cfg" class="text-xs text-red-600 font-medium hover:underline">Reset to Default</button>
+                <div class="flex gap-2">
+                    <button id="btn-cancel-firebase-cfg" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-medium">Cancel</button>
+                    <button id="btn-save-firebase-cfg" class="px-4 py-2 bg-amber-600 text-white hover:bg-amber-700 rounded-lg text-xs font-semibold">Save & Reconnect</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase Configuration Setup
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-qr-scanner-app';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        const savedCustomFb = localStorage.getItem('custom_firebase_config');
+        let firebaseConfig = savedCustomFb ? JSON.parse(savedCustomFb) : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "demo-api-key",
             authDomain: "demo-app.firebaseapp.com",
-            projectId: "demo-app",
-            storageBucket: "demo-app.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:123456789"
-        };
+            projectId: "demo-app"
+        });
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let app, db, auth;
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-        } catch (err) {
-            console.warn("Firebase init warn:", err);
-        }
+        let isCloudConnected = false;
+        let unsubscribeListener = null;
+
+        // PeerJS P2P Fallback Sync Variables
+        let peer = null;
+        let peerConnections = [];
+        let hostConn = null;
+        let isP2pHost = false;
 
         // Read Event Code from URL query param if present
         const urlParams = new URLSearchParams(window.location.search);
@@ -360,8 +395,6 @@
         let audioCtx = null;
         let lastScanText = '';
         let lastScanTime = 0;
-        let unsubscribeListener = null;
-        let isCloudConnected = false;
 
         // Explicit UI Element Binding
         const syncStatusBadge = document.getElementById('sync-status-badge');
@@ -400,6 +433,7 @@
         const eventModal = document.getElementById('event-modal');
         const shareModal = document.getElementById('share-modal');
         const confirmModal = document.getElementById('confirm-modal');
+        const customFirebaseModal = document.getElementById('custom-firebase-modal');
         const btnShareSession = document.getElementById('btn-share-session');
         const shareLinkInput = document.getElementById('share-link-input');
         const btnCopyShareLink = document.getElementById('btn-copy-share-link');
@@ -423,7 +457,7 @@
                 gain.connect(audioCtx.destination);
 
                 if (type === 'success') {
-                    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
                     osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.08);
                     gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
                     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
@@ -445,14 +479,15 @@
                     osc.start();
                     osc.stop(audioCtx.currentTime + 0.35);
                 }
-            } catch (e) {
-                console.log("Audio not supported or blocked", e);
-            }
+            } catch (e) {}
         }
 
         async function initializeAppAuthAndSync() {
             try {
-                if (auth) {
+                if (firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== 'demo-api-key') {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
                     if (initialAuthToken) {
                         await signInWithCustomToken(auth, initialAuthToken);
                     } else {
@@ -461,15 +496,121 @@
                     isCloudConnected = true;
                     updateSyncBadge(true, "Cloud Connected");
                     setupRealtimeSync();
-                } else {
-                    throw new Error("No Auth instance");
+                    return;
                 }
+                throw new Error("No custom or valid platform Cloud API key");
             } catch (err) {
-                console.warn("Cloud connection unavailable, running in local-session mode:", err);
+                console.warn("Cloud connection unavailable, switching to Live P2P Sync:", err);
                 isCloudConnected = false;
-                updateSyncBadge(false, "Local Session Mode");
                 loadFromLocalStorage();
                 updateView();
+                initPeerSync();
+            }
+        }
+
+        // Zero-Config PeerJS Live Sync for GitHub Pages & Private Windows
+        function initPeerSync() {
+            if (typeof Peer === 'undefined') {
+                updateSyncBadge(false, "Local Session Mode");
+                return;
+            }
+
+            if (peer) {
+                try { peer.destroy(); } catch(e){}
+            }
+
+            const cleanCode = eventCode.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const peerHostId = `qr_evt_host_${cleanCode}`;
+
+            // Attempt to host room for this Event Code
+            peer = new Peer(peerHostId);
+
+            peer.on('open', (id) => {
+                isP2pHost = true;
+                updateSyncBadge(true, "Live P2P Host");
+                showDebug(`Station operating as Primary Host for "${eventCode}". Other devices/windows will sync directly here!`, false);
+            });
+
+            peer.on('connection', (conn) => {
+                peerConnections.push(conn);
+                conn.on('open', () => {
+                    // Instantly sync entire attendee list to joining station
+                    conn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
+                });
+                conn.on('data', (data) => handlePeerMessage(data, conn));
+                conn.on('close', () => {
+                    peerConnections = peerConnections.filter(c => c !== conn);
+                });
+            });
+
+            peer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    // Host ID already active -> join as Client station
+                    connectAsPeerClient(peerHostId);
+                } else {
+                    console.warn("PeerJS error:", err);
+                    updateSyncBadge(false, "P2P Disconnected");
+                }
+            });
+        }
+
+        function connectAsPeerClient(hostId) {
+            if (peer) {
+                try { peer.destroy(); } catch(e){}
+            }
+            const clientId = `qr_evt_client_${Math.random().toString(36).substring(2, 9)}`;
+            peer = new Peer(clientId);
+
+            peer.on('open', () => {
+                hostConn = peer.connect(hostId, { reliable: true });
+                hostConn.on('open', () => {
+                    isP2pHost = false;
+                    updateSyncBadge(true, "Live P2P Synced");
+                    hostConn.send({ type: 'REQUEST_SYNC' });
+                    showDebug(`Successfully connected and synced with Main Station for "${eventCode}"!`, false);
+                });
+                hostConn.on('data', (data) => handlePeerMessage(data, null));
+                hostConn.on('close', () => {
+                    updateSyncBadge(false, "P2P Disconnected");
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.warn("Peer client error:", err);
+            });
+        }
+
+        function broadcastStateUpdate() {
+            if (isP2pHost) {
+                peerConnections.forEach(conn => {
+                    if (conn && conn.open) {
+                        conn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
+                    }
+                });
+            } else if (hostConn && hostConn.open) {
+                hostConn.send({ type: 'CLIENT_UPDATE_STATE', attendees: attendees });
+            }
+        }
+
+        function handlePeerMessage(data, senderConn) {
+            if (data.type === 'SYNC_FULL_STATE') {
+                attendees = data.attendees || [];
+                saveToLocalStorage();
+                updateView();
+            } else if (data.type === 'REQUEST_SYNC' && isP2pHost && senderConn && senderConn.open) {
+                senderConn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
+            } else if (data.type === 'CLIENT_UPDATE_STATE') {
+                attendees = data.attendees || [];
+                saveToLocalStorage();
+                updateView();
+                // Relay update to all other connected stations
+                if (isP2pHost) {
+                    peerConnections.forEach(c => {
+                        if (c !== senderConn && c.open) {
+                            c.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
+                        }
+                    });
+                }
             }
         }
 
@@ -503,7 +644,7 @@
                 updateView();
             }, (error) => {
                 console.error("Firestore sync error:", error);
-                showDebug(`Sync warning: Using local state fallback. (${error.message})`, true);
+                showDebug(`Cloud sync fallback. (${error.message})`, true);
                 loadFromLocalStorage();
                 updateView();
             });
@@ -684,7 +825,7 @@
                             await batch.commit();
                         }
                     } else {
-                        // Merge locally
+                        // Merge locally and broadcast
                         batchDocData.forEach(item => {
                             const existingIdx = attendees.findIndex(a => a.id === item.id);
                             if (existingIdx >= 0) {
@@ -695,6 +836,7 @@
                         });
                         saveToLocalStorage();
                         updateView();
+                        broadcastStateUpdate();
                     }
 
                     showDebug(`Successfully loaded and synced ${batchDocData.length} attendees!`, false);
@@ -778,7 +920,7 @@
         function handleScanSuccess(decodedText) {
             const now = Date.now();
             if (decodedText === lastScanText && (now - lastScanTime) < 2500) {
-                return; // Debounce rapid repeat scans
+                return;
             }
             lastScanText = decodedText;
             lastScanTime = now;
@@ -789,14 +931,12 @@
             if (!queryStr || !queryStr.trim()) return;
             const text = queryStr.trim().toLowerCase();
 
-            // Match by email, id, or name
             let matched = attendees.find(a => 
                 (a.email && a.email.toLowerCase() === text) ||
                 (a.id && a.id.toLowerCase() === text) ||
                 (`${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase() === text)
             );
 
-            // Fuzzy fallback search if exact match isn't found
             if (!matched) {
                 matched = attendees.find(a => 
                     (a.email && a.email.toLowerCase().includes(text)) ||
@@ -820,6 +960,7 @@
                     } else {
                         saveToLocalStorage();
                         updateView();
+                        broadcastStateUpdate();
                     }
 
                     playBeep('success');
@@ -981,6 +1122,7 @@
             } else {
                 saveToLocalStorage();
                 updateView();
+                broadcastStateUpdate();
             }
         };
 
@@ -1047,11 +1189,38 @@
                 attendees.push(newWalkin);
                 saveToLocalStorage();
                 updateView();
+                broadcastStateUpdate();
             }
 
             playBeep('success');
             walkinModal.classList.add('hidden');
             showAlertBox('success', 'Walk-in Checked In!', `REGISTERED: ${first} ${last}`);
+        });
+
+        // Custom Firebase Modal Handlers
+        document.getElementById('btn-custom-firebase').addEventListener('click', () => {
+            initAudio();
+            document.getElementById('custom-firebase-json').value = savedCustomFb || '';
+            customFirebaseModal.classList.remove('hidden');
+        });
+        document.getElementById('btn-close-firebase-modal').addEventListener('click', () => customFirebaseModal.classList.add('hidden'));
+        document.getElementById('btn-cancel-firebase-cfg').addEventListener('click', () => customFirebaseModal.classList.add('hidden'));
+        
+        document.getElementById('btn-save-firebase-cfg').addEventListener('click', () => {
+            const raw = document.getElementById('custom-firebase-json').value.trim();
+            if (raw) {
+                try {
+                    JSON.parse(raw);
+                    localStorage.setItem('custom_firebase_config', raw);
+                    window.location.reload();
+                } catch(e) {
+                    alert('Invalid JSON formatting. Please enter valid Firebase config.');
+                }
+            }
+        });
+        document.getElementById('btn-clear-firebase-cfg').addEventListener('click', () => {
+            localStorage.removeItem('custom_firebase_config');
+            window.location.reload();
         });
 
         // Share Session Modal Trigger
@@ -1089,7 +1258,12 @@
                 localStorage.setItem('qr_event_code', eventCode);
                 eventCodeText.textContent = eventCode;
                 eventModal.classList.add('hidden');
-                setupRealtimeSync();
+                
+                if (isCloudConnected) {
+                    setupRealtimeSync();
+                } else {
+                    initPeerSync();
+                }
             }
         });
 
@@ -1129,6 +1303,7 @@
                     attendees = [];
                     saveToLocalStorage();
                     updateView();
+                    broadcastStateUpdate();
                 }
                 showDebug("Event data cleared successfully.", false);
             } catch (err) {
