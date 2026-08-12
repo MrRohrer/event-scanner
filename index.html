@@ -3,17 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Station Registration QR Scanner</title>
+    <title>Registration Scanner</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Camera Scanner Library -->
     <script src="https://unpkg.com/html5-qrcode"></script>
-    <!-- PeerJS for Zero-Config Live P2P Cross-Device Sync -->
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
-        /* Custom smooth scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -22,191 +19,192 @@
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     </style>
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-800 font-sans p-3 sm:p-6">
+<body class="min-h-screen bg-slate-100/70 text-slate-800 font-sans p-3 sm:p-6">
 
-    <div class="max-w-7xl mx-auto space-y-5">
+    <div class="max-w-7xl mx-auto space-y-4">
         
-        <!-- App Header with Realtime Sync Status & Controls -->
-        <header class="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-3 flex-wrap">
-                    <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Registration Scanner</h1>
-                    <!-- Real-time Status Badge -->
-                    <span id="sync-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                        <span class="w-2 h-2 rounded-full bg-amber-500 pulse-subtle"></span>
-                        <span id="sync-status-text">Connecting to Cloud...</span>
-                    </span>
-                </div>
-                <p class="text-slate-500 text-sm mt-1" id="file-status">Upload CSV/TXT file or join shared event ID to sync across stations.</p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2.5">
-                <!-- Station ID Selector -->
-                <div class="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700">
-                    <i class="fa-solid fa-desktop text-slate-400"></i>
-                    <span class="hidden sm:inline text-slate-500">Station:</span>
-                    <input type="text" id="station-name-input" value="Door 1" class="bg-transparent font-bold text-slate-800 outline-none w-20 sm:w-28 text-center" title="Click to rename this station" />
+        <!-- Top Header & Actions Bar -->
+        <header class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                
+                <!-- Title & Badge -->
+                <div>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Registration Scanner</h1>
+                        <span id="sync-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-subtle"></span>
+                            <span id="sync-status-text">Live P2P Host</span>
+                        </span>
+                    </div>
+                    <p class="text-slate-500 text-xs sm:text-sm mt-1" id="file-status">
+                        Upload CSV/TXT file or join shared event ID to sync across stations.
+                    </p>
                 </div>
 
-                <!-- Event Session Code -->
-                <button id="btn-event-code" class="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-indigo-100 transition-colors">
-                    <i class="fa-solid fa-key"></i>
-                    <span id="event-code-text">Event Code</span>
-                </button>
+                <!-- Action Controls -->
+                <div class="flex flex-wrap items-center gap-2">
+                    
+                    <!-- Station Identifier -->
+                    <div class="flex items-center gap-1.5 bg-slate-100/80 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-700">
+                        <i class="fa-solid fa-desktop text-slate-400"></i>
+                        <span class="text-slate-500">Station:</span>
+                        <input type="text" id="station-name-input" value="Door 1" class="bg-transparent font-bold text-slate-800 outline-none w-20 text-center" title="Click to rename station" />
+                    </div>
 
-                <!-- Share Session Link Button -->
-                <button id="btn-share-session" class="flex items-center gap-1.5 px-3 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg text-xs sm:text-sm font-medium hover:bg-purple-100 transition-colors">
-                    <i class="fa-solid fa-share-nodes"></i>
-                    <span>Share / Sync Devices</span>
-                </button>
+                    <!-- Event Key Button -->
+                    <button class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors">
+                        <i class="fa-solid fa-key"></i>
+                        <span>MAIN-EVENT</span>
+                    </button>
 
-                <!-- Cloud DB Settings Button -->
-                <button id="btn-custom-firebase" class="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs sm:text-sm font-medium hover:bg-amber-100 transition-colors" title="Optional: Configure custom Firebase Cloud DB">
-                    <i class="fa-solid fa-cloud"></i>
-                    <span class="hidden sm:inline">Cloud Setup</span>
-                </button>
+                    <!-- Share / Sync Button -->
+                    <button class="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-100 transition-colors">
+                        <i class="fa-solid fa-share-nodes"></i>
+                        <span>Share / Sync Devices</span>
+                    </button>
 
-                <!-- CSV Upload Button -->
-                <label class="flex items-center gap-2 px-3.5 py-2 bg-blue-600 text-white rounded-lg shadow-sm cursor-pointer hover:bg-blue-700 transition-colors text-xs sm:text-sm font-medium">
-                    <i class="fa-solid fa-upload"></i>
-                    <span>Upload CSV</span>
-                    <input type="file" id="csv-file" accept=".csv, .txt, .tsv" class="hidden" />
-                </label>
+                    <!-- Cloud Setup Button -->
+                    <button class="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors">
+                        <i class="fa-solid fa-cloud"></i>
+                        <span>Cloud Setup</span>
+                    </button>
 
-                <!-- Export List -->
-                <button id="btn-export" disabled class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-200 text-slate-400 cursor-not-allowed">
-                    <i class="fa-solid fa-download"></i>
-                    <span>Export</span>
-                </button>
+                    <!-- Upload CSV -->
+                    <label class="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg shadow-sm cursor-pointer hover:bg-blue-700 transition-colors text-xs font-bold">
+                        <i class="fa-solid fa-upload"></i>
+                        <span>Upload CSV</span>
+                        <input type="file" id="csv-file" accept=".csv, .txt, .tsv" class="hidden" />
+                    </label>
 
-                <!-- Walk-in Button -->
-                <button id="btn-walkin" class="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs sm:text-sm font-medium hover:bg-emerald-200 transition-colors">
-                    <i class="fa-solid fa-user-plus"></i>
-                    <span>Walk-in</span>
-                </button>
+                    <!-- Export Button -->
+                    <button id="btn-export" class="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors">
+                        <i class="fa-solid fa-download"></i>
+                        <span>Export</span>
+                    </button>
 
-                <!-- Clear Data -->
-                <button id="btn-clear" class="flex items-center gap-1.5 px-3.5 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs sm:text-sm font-medium hover:bg-red-100 transition-colors">
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>Clear</span>
-                </button>
+                    <!-- Walk-in Button -->
+                    <button id="btn-walkin" class="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold hover:bg-emerald-200 transition-colors">
+                        <i class="fa-solid fa-user-plus"></i>
+                        <span>Walk-in</span>
+                    </button>
+
+                    <!-- Clear Button -->
+                    <button id="btn-clear" class="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Clear</span>
+                    </button>
+                </div>
             </div>
         </header>
 
-        <!-- Dynamic Debug / Notification Banner -->
-        <div id="debug-banner" class="hidden p-4 rounded-xl text-sm font-medium border"></div>
+        <!-- Station Host Notification Banner -->
+        <div class="bg-emerald-50/80 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-emerald-600"></i>
+            <span>Station operating as Primary Host for "MAIN-EVENT". Other devices/windows will sync directly here!</span>
+        </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
             
-            <!-- Left Column: Scanner & Scan Result Alert -->
-            <div class="lg:col-span-5 space-y-6">
+            <!-- Left Side: Feedback, Camera, Manual Input -->
+            <div class="lg:col-span-4 space-y-4">
                 
-                <!-- Scan Result Feedback Display Box -->
-                <div id="alert-box" class="p-6 rounded-2xl shadow-sm border bg-white border-slate-200 transition-all duration-300 min-h-[160px] flex items-center justify-center">
-                    <div id="alert-content" class="flex flex-col items-center text-center space-y-2">
-                        <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                            <i class="fa-solid fa-qrcode text-2xl"></i>
+                <!-- Ready to Scan / Feedback Card -->
+                <div id="alert-box" class="p-5 rounded-2xl shadow-sm border bg-white border-slate-200 transition-all duration-300 min-h-[140px] flex items-center justify-center">
+                    <div id="alert-content" class="flex flex-col items-center text-center space-y-1.5">
+                        <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                            <i class="fa-solid fa-grip text-xl"></i>
                         </div>
-                        <h3 class="text-lg font-bold text-slate-600">Ready to Scan</h3>
-                        <p class="text-xs sm:text-sm text-slate-400">Position QR code in camera view or type to search below.</p>
+                        <h3 class="text-base font-bold text-slate-700">Ready to Scan</h3>
+                        <p class="text-xs text-slate-400">Position QR code in camera view or type to search below.</p>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                    <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 sm:items-center justify-between bg-slate-50">
-                        <h2 class="font-semibold text-slate-700 flex items-center gap-2 text-sm sm:text-base">
-                            <i class="fa-solid fa-camera text-blue-600"></i>
-                            Camera QR Scanner
+                <!-- Camera QR Scanner -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <h2 class="font-bold text-slate-800 text-xs sm:text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-camera text-blue-600"></i> Camera QR Scanner
                         </h2>
                         
                         <div class="flex items-center gap-2">
-                            <select id="camera-select" class="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[170px] truncate">
-                                <option value="">Detecting cameras...</option>
+                            <select id="camera-select" class="text-xs bg-white border border-slate-300 rounded-md px-2 py-1 focus:outline-none">
+                                <option>MacBook Air Camera</option>
                             </select>
-
-                            <button id="btn-toggle-scanner" class="px-3.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap">
-                                <i class="fa-solid fa-play"></i> <span id="scanner-btn-text">Start</span>
+                            <button id="btn-toggle-scanner" class="px-3 py-1 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+                                <i class="fa-solid fa-play text-[10px]"></i> <span id="scanner-btn-text">Start</span>
                             </button>
                         </div>
                     </div>
                     
-                    <div class="p-4 bg-slate-900 relative">
-                        <div id="camera-error" class="hidden absolute inset-0 bg-red-900/90 z-10 flex items-center justify-center p-6 text-center text-red-100 text-sm font-medium"></div>
-                        <div id="reader" class="w-full bg-slate-900 rounded-lg overflow-hidden min-h-[280px] flex items-center justify-center">
-                            <div id="reader-placeholder" class="text-slate-400 text-center p-6">
-                                <i class="fa-solid fa-video-slash text-4xl mx-auto mb-3 opacity-40 block"></i>
-                                <p class="text-sm">Camera is inactive. Select camera and click "Start".</p>
+                    <div class="p-3 bg-slate-900 relative">
+                        <div id="reader" class="w-full bg-slate-900 rounded-lg overflow-hidden min-h-[200px] flex items-center justify-center">
+                            <div id="reader-placeholder" class="text-slate-400 text-center p-4">
+                                <i class="fa-solid fa-video-slash text-3xl mb-1 opacity-40 block"></i>
+                                <p class="text-xs">Camera is inactive. Click "Start".</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Manual Code/Search Input Quick Check-in -->
-                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-2">
-                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Manual Code / QR Payload Entry</label>
+                <!-- Manual Entry Form -->
+                <div class="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 space-y-2">
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Manual Code / Name Search</label>
                     <form id="manual-scan-form" class="flex gap-2">
-                        <input type="text" id="manual-scan-input" placeholder="Enter QR text, email, or name..." class="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        <button type="submit" class="px-4 py-2 bg-slate-800 text-white hover:bg-slate-900 rounded-lg text-sm font-medium transition-colors">Check In</button>
+                        <input type="text" id="manual-scan-input" placeholder="Enter QR code, name, or email..." class="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <button type="submit" class="px-3.5 py-1.5 bg-slate-800 text-white hover:bg-slate-900 rounded-lg text-xs font-bold transition-colors">Check In</button>
                     </form>
                 </div>
 
             </div>
 
-            <!-- Right Column: Live Stats & Synchronized Attendee List -->
-            <div class="lg:col-span-7 space-y-6">
+            <!-- Right Side: Stats & Attendees Table -->
+            <div class="lg:col-span-8 space-y-4">
                 
+                <!-- Quick Stats Cards -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total</span>
-                        <span id="stat-total" class="text-2xl sm:text-3xl font-extrabold text-slate-800 mt-0.5">0</span>
+                    <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 text-center">
+                        <span class="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">TOTAL</span>
+                        <span id="stat-total" class="text-2xl font-black text-slate-800 block">0</span>
                     </div>
-                    <div class="bg-emerald-50 p-3.5 sm:p-4 rounded-2xl shadow-sm border border-emerald-100 flex flex-col items-center justify-center text-center">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-emerald-600">Checked In</span>
-                        <span id="stat-checked-in" class="text-2xl sm:text-3xl font-extrabold text-emerald-700 mt-0.5">0</span>
+                    <div class="bg-emerald-50/60 p-3 rounded-2xl shadow-sm border border-emerald-100 text-center">
+                        <span class="text-[10px] font-extrabold uppercase text-emerald-600 tracking-wider">CHECKED IN</span>
+                        <span id="stat-checked-in" class="text-2xl font-black text-emerald-700 block">0</span>
                     </div>
-                    <div class="bg-blue-50 p-3.5 sm:p-4 rounded-2xl shadow-sm border border-blue-100 flex flex-col items-center justify-center text-center">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-blue-600">Remaining</span>
-                        <span id="stat-remaining" class="text-2xl sm:text-3xl font-extrabold text-blue-700 mt-0.5">0</span>
+                    <div class="bg-blue-50/60 p-3 rounded-2xl shadow-sm border border-blue-100 text-center">
+                        <span class="text-[10px] font-extrabold uppercase text-blue-600 tracking-wider">REMAINING</span>
+                        <span id="stat-remaining" class="text-2xl font-black text-blue-700 block">0</span>
                     </div>
-                    <div class="bg-purple-50 p-3.5 sm:p-4 rounded-2xl shadow-sm border border-purple-100 flex flex-col items-center justify-center text-center">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-purple-600">Walk-Ins</span>
-                        <span id="stat-walkins" class="text-2xl sm:text-3xl font-extrabold text-purple-700 mt-0.5">0</span>
+                    <div class="bg-purple-50/60 p-3 rounded-2xl shadow-sm border border-purple-100 text-center">
+                        <span class="text-[10px] font-extrabold uppercase text-purple-600 tracking-wider">WALK-INS</span>
+                        <span id="stat-walkins" class="text-2xl font-black text-purple-700 block">0</span>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[620px]">
+                <!-- Table Container Card -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[520px]">
                     
-                    <!-- Search Bar & Filter Header -->
-                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row gap-3 justify-between items-center">
-                        
-                        <!-- Filter Tabs -->
-                        <div class="flex bg-slate-200/80 p-1 rounded-xl text-xs font-medium w-full sm:w-auto">
-                            <button id="filter-all" class="filter-tab px-3 py-1.5 rounded-lg bg-white text-slate-800 shadow-sm font-semibold transition-all">All</button>
-                            <button id="filter-checked" class="filter-tab px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Checked In</button>
-                            <button id="filter-pending" class="filter-tab px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all">Pending</button>
+                    <!-- Filters & Search Bar -->
+                    <div class="p-3 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row gap-2.5 justify-between items-center">
+                        <div class="flex bg-slate-200/70 p-1 rounded-xl text-xs font-semibold w-full sm:w-auto">
+                            <button id="filter-all" class="filter-tab px-3 py-1 rounded-lg bg-white text-slate-800 shadow-sm">All</button>
+                            <button id="filter-checked" class="filter-tab px-3 py-1 rounded-lg text-slate-500">Checked In</button>
+                            <button id="filter-pending" class="filter-tab px-3 py-1 rounded-lg text-slate-500">Pending</button>
                         </div>
 
-                        <!-- Live Search Input -->
-                        <div class="relative w-full sm:w-64">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 text-xs"></i>
-                            <input
-                                type="text"
-                                id="search-input"
-                                placeholder="Search attendee name, email..."
-                                class="w-full pl-9 pr-4 py-1.5 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                        <div class="relative w-full sm:w-72">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input type="text" id="search-input" placeholder="Search attendee name, email..." class="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
                     </div>
                     
-                    <!-- Table Body Container -->
-                    <div class="flex-1 overflow-auto" id="table-container">
+                    <!-- Scrollable Table Container -->
+                    <div class="flex-1 overflow-x-auto overflow-y-auto" id="table-container">
                         <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-                            <i class="fa-solid fa-cloud-arrow-up text-4xl mb-3 opacity-30"></i>
-                            <p class="text-base font-semibold text-slate-600">No attendees loaded</p>
-                            <p class="text-xs text-slate-400 mt-1 max-w-sm">Upload a CSV/TXT list or click "Walk-in" to add attendees. Live sync is active across all stations!</p>
+                            <i class="fa-solid fa-cloud-arrow-up text-4xl mb-2 opacity-30"></i>
+                            <p class="text-sm font-bold text-slate-600">No attendees loaded</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Upload a CSV file to display attendees.</p>
                         </div>
                     </div>
-
                 </div>
 
             </div>
@@ -214,1169 +212,424 @@
     </div>
 
     <!-- Walk-in Modal -->
-    <div id="walkin-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+    <div id="walkin-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-100">
             <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-user-plus text-emerald-600"></i>
-                    Add Walk-in Attendee
+                <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus text-emerald-600"></i> Add Walk-in Attendee
                 </h3>
-                <button id="btn-close-modal" class="text-slate-400 hover:text-slate-700 transition-colors p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
+                <button id="btn-close-modal" class="text-slate-400 hover:text-slate-700"><i class="fa-solid fa-xmark text-base"></i></button>
             </div>
-            <div class="p-5 space-y-3.5">
+            <div class="p-4 space-y-3">
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">First Name <span class="text-red-500">*</span></label>
-                    <input type="text" id="walkin-first" placeholder="e.g. Jane" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">First & Last Name *</label>
+                    <input type="text" id="walkin-name" placeholder="Full Name" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Last Name</label>
-                    <input type="text" id="walkin-last" placeholder="e.g. Doe" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Translation Needed?</label>
+                    <select id="walkin-translator" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="No">No</option>
+                        <option value="Yes">Yes</option>
+                    </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Email Address</label>
-                    <input type="email" id="walkin-email" placeholder="e.g. jane@example.com" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Email / ID</label>
+                    <input type="email" id="walkin-email" placeholder="email@example.com" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">School / Organization</label>
-                    <input type="text" id="walkin-school" placeholder="e.g. Lincoln High" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">School / Org / Building</label>
+                    <input type="text" id="walkin-school" placeholder="School Name" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
             </div>
-            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2.5">
-                <button id="btn-cancel-walkin" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                <button id="btn-save-walkin" class="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-sm font-semibold transition-colors shadow-sm">Save & Check In</button>
+            <div class="p-3 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                <button id="btn-cancel-walkin" class="px-3 py-1.5 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-semibold">Cancel</button>
+                <button id="btn-save-walkin" class="px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-semibold">Save & Check In</button>
             </div>
         </div>
     </div>
 
-    <!-- Event Session Code Modal -->
-    <div id="event-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-slate-100">
-            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800">Shared Event Session</h3>
-                <button id="btn-close-event-modal" class="text-slate-400 hover:text-slate-700 p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-            <div class="p-5 space-y-3">
-                <p class="text-xs text-slate-500">Enter the same Event Code on all check-in stations to sync attendees in real time across doors.</p>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Event Session Code</label>
-                    <input type="text" id="event-code-input" placeholder="e.g. EVENT-2026" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                </div>
-            </div>
-            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
-                <button id="btn-save-event-code" class="w-full py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-semibold transition-colors">Join Event Sync Session</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Share Session Modal -->
-    <div id="share-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-100">
-            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-network-wired text-purple-600"></i>
-                    Connect Other Computers / Stations
-                </h3>
-                <button id="btn-close-share-modal" class="text-slate-400 hover:text-slate-700 p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-            <div class="p-5 space-y-4">
-                <div class="bg-purple-50 p-3.5 rounded-xl border border-purple-100 text-xs text-purple-900 space-y-1.5">
-                    <div class="font-bold text-sm text-purple-800 flex items-center gap-1.5">
-                        <i class="fa-solid fa-circle-info"></i> How multi-station sync works:
-                    </div>
-                    <p>1. Open this website link on any other laptop, tablet, or private browser window.</p>
-                    <p>2. Keep the Event Code as: <span id="share-modal-code-display" class="font-mono font-bold text-purple-900 bg-purple-200 px-1.5 py-0.5 rounded">MAIN-EVENT</span></p>
-                    <p class="text-[11px] text-purple-700 pt-1 border-t border-purple-200">⚡ Live P2P WebRTC Sync automatically streams attendee list and check-ins between windows instantly!</p>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Direct Share Link</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="share-link-input" readonly class="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-600 select-all focus:outline-none">
-                        <button id="btn-copy-share-link" class="px-3.5 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap">
-                            <i class="fa-solid fa-copy"></i> Copy Link
-                        </button>
-                    </div>
-                    <span id="copy-status-msg" class="text-[11px] text-emerald-600 font-medium hidden mt-1">Copied to clipboard! Send this link to other station operators.</span>
-                </div>
-            </div>
-            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                <button id="btn-done-share" class="px-4 py-2 bg-slate-800 text-white hover:bg-slate-900 rounded-lg text-sm font-semibold">Done</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-slate-100 p-5 space-y-4">
-            <div class="flex items-center gap-3 text-red-600">
-                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
-                <h3 class="text-base font-bold text-slate-800" id="confirm-modal-title">Clear Data?</h3>
-            </div>
-            <p class="text-sm text-slate-600" id="confirm-modal-msg">Are you sure? This will remove all attendee records from this event session across all connected stations.</p>
-            <div class="flex justify-end gap-2.5 pt-2">
-                <button id="confirm-cancel-btn" class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200">Cancel</button>
-                <button id="confirm-ok-btn" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">Clear All Data</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Firebase Custom Config Modal -->
-    <div id="custom-firebase-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border border-slate-100">
-            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-cloud text-amber-600"></i>
-                    Custom Firebase Cloud Database Setup
-                </h3>
-                <button id="btn-close-firebase-modal" class="text-slate-400 hover:text-slate-700 p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-            <div class="p-5 space-y-3">
-                <p class="text-xs text-slate-600">By default, stations sync via zero-config <strong>P2P WebRTC</strong>. If you want persistent cloud storage on GitHub Pages, paste your Firebase config JSON below:</p>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1 uppercase">Firebase Config Object / JSON</label>
-                    <textarea id="custom-firebase-json" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "projectId": "..." }' class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"></textarea>
-                </div>
-            </div>
-            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-                <button id="btn-clear-firebase-cfg" class="text-xs text-red-600 font-medium hover:underline">Reset to Default</button>
-                <div class="flex gap-2">
-                    <button id="btn-cancel-firebase-cfg" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-medium">Cancel</button>
-                    <button id="btn-save-firebase-cfg" class="px-4 py-2 bg-amber-600 text-white hover:bg-amber-700 rounded-lg text-xs font-semibold">Save & Reconnect</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Firebase Configuration Setup
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-qr-scanner-app';
-        const savedCustomFb = localStorage.getItem('custom_firebase_config');
-        let firebaseConfig = savedCustomFb ? JSON.parse(savedCustomFb) : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "demo-api-key",
-            authDomain: "demo-app.firebaseapp.com",
-            projectId: "demo-app"
-        });
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let app, db, auth;
-        let isCloudConnected = false;
-        let unsubscribeListener = null;
-
-        // PeerJS P2P Fallback Sync Variables
-        let peer = null;
-        let peerConnections = [];
-        let hostConn = null;
-        let isP2pHost = false;
-
-        // Read Event Code from URL query param if present
-        const urlParams = new URLSearchParams(window.location.search);
-        const queryEvent = urlParams.get('event');
-
-        // Application State Variables
+    <!-- Logic Script -->
+    <script>
         let attendees = [];
-        let eventCode = (queryEvent || localStorage.getItem('qr_event_code') || 'MAIN-EVENT').toUpperCase().trim();
-        let stationName = localStorage.getItem('qr_station_name') || 'Door 1';
         let currentFilter = 'all';
         let searchTerm = '';
-        let isScannerRunning = false;
         let html5QrCode = null;
-        let audioCtx = null;
-        let lastScanText = '';
-        let lastScanTime = 0;
+        let isScannerRunning = false;
 
-        // Explicit UI Element Binding
-        const syncStatusBadge = document.getElementById('sync-status-badge');
-        const syncStatusText = document.getElementById('sync-status-text');
-        const fileStatus = document.getElementById('file-status');
-        const stationNameInput = document.getElementById('station-name-input');
-        const eventCodeText = document.getElementById('event-code-text');
-        const btnEventCode = document.getElementById('btn-event-code');
         const csvFileInput = document.getElementById('csv-file');
-        const btnExport = document.getElementById('btn-export');
-        const btnWalkin = document.getElementById('btn-walkin');
-        const btnClear = document.getElementById('btn-clear');
-        const debugBanner = document.getElementById('debug-banner');
-        const alertBox = document.getElementById('alert-box');
-        const alertContent = document.getElementById('alert-content');
-        const cameraSelect = document.getElementById('camera-select');
-        const btnToggleScanner = document.getElementById('btn-toggle-scanner');
-        const scannerBtnText = document.getElementById('scanner-btn-text');
-        const cameraError = document.getElementById('camera-error');
+        const tableContainer = document.getElementById('table-container');
+        const searchInput = document.getElementById('search-input');
         const manualScanForm = document.getElementById('manual-scan-form');
         const manualScanInput = document.getElementById('manual-scan-input');
-        const statTotal = document.getElementById('stat-total');
-        const statCheckedIn = document.getElementById('stat-checked-in');
-        const statRemaining = document.getElementById('stat-remaining');
-        const statWalkins = document.getElementById('stat-walkins');
-        const searchInput = document.getElementById('search-input');
-        const tableContainer = document.getElementById('table-container');
-        const walkinModal = document.getElementById('walkin-modal');
-        const walkinFirst = document.getElementById('walkin-first');
-        const walkinLast = document.getElementById('walkin-last');
-        const walkinEmail = document.getElementById('walkin-email');
-        const walkinSchool = document.getElementById('walkin-school');
-        const btnSaveWalkin = document.getElementById('btn-save-walkin');
-        const btnCancelWalkin = document.getElementById('btn-cancel-walkin');
-        const btnCloseModal = document.getElementById('btn-close-modal');
-        const eventModal = document.getElementById('event-modal');
-        const shareModal = document.getElementById('share-modal');
-        const confirmModal = document.getElementById('confirm-modal');
-        const customFirebaseModal = document.getElementById('custom-firebase-modal');
-        const btnShareSession = document.getElementById('btn-share-session');
-        const shareLinkInput = document.getElementById('share-link-input');
-        const btnCopyShareLink = document.getElementById('btn-copy-share-link');
-        const copyStatusMsg = document.getElementById('copy-status-msg');
+        const alertBox = document.getElementById('alert-box');
+        const alertContent = document.getElementById('alert-content');
+        const btnToggleScanner = document.getElementById('btn-toggle-scanner');
+        const scannerBtnText = document.getElementById('scanner-btn-text');
 
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-
-        function playBeep(type = 'success') {
-            try {
-                initAudio();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-
-                if (type === 'success') {
-                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-                    osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.08);
-                    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.25);
-                } else if (type === 'warning') {
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-                    osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.1);
-                    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.3);
-                } else {
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
-                    osc.start();
-                    osc.stop(audioCtx.currentTime + 0.35);
-                }
-            } catch (e) {}
-        }
-
-        async function initializeAppAuthAndSync() {
-            try {
-                if (firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== 'demo-api-key') {
-                    app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
+        // Robust CSV Parser preserving quotes and properly handling address commas
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
                     } else {
-                        await signInAnonymously(auth);
+                        inQuotes = !inQuotes;
                     }
-                    isCloudConnected = true;
-                    updateSyncBadge(true, "Cloud Connected");
-                    setupRealtimeSync();
-                    return;
-                }
-                throw new Error("No custom or valid platform Cloud API key");
-            } catch (err) {
-                console.warn("Cloud connection unavailable, switching to Live P2P Sync:", err);
-                isCloudConnected = false;
-                loadFromLocalStorage();
-                updateView();
-                initPeerSync();
-            }
-        }
-
-        // Zero-Config PeerJS Live Sync for GitHub Pages & Private Windows
-        function initPeerSync() {
-            if (typeof Peer === 'undefined') {
-                updateSyncBadge(false, "Local Session Mode");
-                return;
-            }
-
-            if (peer) {
-                try { peer.destroy(); } catch(e){}
-            }
-
-            const cleanCode = eventCode.replace(/[^a-zA-Z0-9_-]/g, '_');
-            const peerHostId = `qr_evt_host_${cleanCode}`;
-
-            // Attempt to host room for this Event Code
-            peer = new Peer(peerHostId);
-
-            peer.on('open', (id) => {
-                isP2pHost = true;
-                updateSyncBadge(true, "Live P2P Host");
-                showDebug(`Station operating as Primary Host for "${eventCode}". Other devices/windows will sync directly here!`, false);
-            });
-
-            peer.on('connection', (conn) => {
-                peerConnections.push(conn);
-                conn.on('open', () => {
-                    // Instantly sync entire attendee list to joining station
-                    conn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
-                });
-                conn.on('data', (data) => handlePeerMessage(data, conn));
-                conn.on('close', () => {
-                    peerConnections = peerConnections.filter(c => c !== conn);
-                });
-            });
-
-            peer.on('error', (err) => {
-                if (err.type === 'unavailable-id') {
-                    // Host ID already active -> join as Client station
-                    connectAsPeerClient(peerHostId);
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
                 } else {
-                    console.warn("PeerJS error:", err);
-                    updateSyncBadge(false, "P2P Disconnected");
+                    current += char;
                 }
-            });
-        }
-
-        function connectAsPeerClient(hostId) {
-            if (peer) {
-                try { peer.destroy(); } catch(e){}
             }
-            const clientId = `qr_evt_client_${Math.random().toString(36).substring(2, 9)}`;
-            peer = new Peer(clientId);
-
-            peer.on('open', () => {
-                hostConn = peer.connect(hostId, { reliable: true });
-                hostConn.on('open', () => {
-                    isP2pHost = false;
-                    updateSyncBadge(true, "Live P2P Synced");
-                    hostConn.send({ type: 'REQUEST_SYNC' });
-                    showDebug(`Successfully connected and synced with Main Station for "${eventCode}"!`, false);
-                });
-                hostConn.on('data', (data) => handlePeerMessage(data, null));
-                hostConn.on('close', () => {
-                    updateSyncBadge(false, "P2P Disconnected");
-                });
-            });
-
-            peer.on('error', (err) => {
-                console.warn("Peer client error:", err);
-            });
+            result.push(current.trim());
+            return result;
         }
 
-        function broadcastStateUpdate() {
-            if (isP2pHost) {
-                peerConnections.forEach(conn => {
-                    if (conn && conn.open) {
-                        conn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
-                    }
-                });
-            } else if (hostConn && hostConn.open) {
-                hostConn.send({ type: 'CLIENT_UPDATE_STATE', attendees: attendees });
-            }
-        }
+        function parseCSV(csvText) {
+            const rawLines = csvText.split(/\r\n|\n/);
+            const lines = rawLines.filter(l => l.trim().length > 0);
+            if (lines.length < 2) return [];
 
-        function handlePeerMessage(data, senderConn) {
-            if (data.type === 'SYNC_FULL_STATE') {
-                attendees = data.attendees || [];
-                saveToLocalStorage();
-                updateView();
-            } else if (data.type === 'REQUEST_SYNC' && isP2pHost && senderConn && senderConn.open) {
-                senderConn.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
-            } else if (data.type === 'CLIENT_UPDATE_STATE') {
-                attendees = data.attendees || [];
-                saveToLocalStorage();
-                updateView();
-                // Relay update to all other connected stations
-                if (isP2pHost) {
-                    peerConnections.forEach(c => {
-                        if (c !== senderConn && c.open) {
-                            c.send({ type: 'SYNC_FULL_STATE', attendees: attendees });
+            const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase());
+
+            // Column Header Index Mapping
+            let nameIdx = headers.findIndex(h => h.includes('parent') || h.includes('name'));
+            if (nameIdx === -1) nameIdx = 0;
+
+            let emailIdx = headers.findIndex(h => h.includes('email'));
+            if (emailIdx === -1) emailIdx = 2;
+
+            // Target Column F ("1 - School your child attends") or any school header
+            let schoolIdx = headers.findIndex(h => h.includes('school'));
+            if (schoolIdx === -1) schoolIdx = 5;
+
+            // Target Column T ("Will you need an interpreter...") or translation header
+            let transIdx = headers.findIndex(h => h.includes('translator') || h.includes('interpreter') || h.includes('translation') || h.includes('need'));
+            if (transIdx === -1) transIdx = 19;
+
+            let qrIdx = headers.findIndex(h => h.includes('qr') || h.includes('code'));
+            if (qrIdx === -1) qrIdx = 23;
+
+            const parsed = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const row = parseCSVLine(lines[i]);
+                if (row.length === 0 || !row.some(val => val !== '')) continue;
+
+                // Full Name from Column A
+                const fullName = (row[nameIdx] || 'Unknown').replace(/^"|"$/g, '');
+                const email = (row[emailIdx] || '').replace(/^"|"$/g, '');
+
+                // Extract School Name (Check index 5, fallback to other child school columns if index 5 is empty)
+                let schoolVal = (row[schoolIdx] || '').replace(/^"|"$/g, '');
+                if (!schoolVal || schoolVal === '1') {
+                    const candidateCols = [5, 8, 11, 14, 17];
+                    for (const c of candidateCols) {
+                        if (row[c] && row[c].trim() && row[c].trim() !== '1') {
+                            schoolVal = row[c].replace(/^"|"$/g, '').trim();
+                            break;
                         }
-                    });
-                }
-            }
-        }
-
-        function updateSyncBadge(online, text) {
-            if (online) {
-                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200";
-                syncStatusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-emerald-500 pulse-subtle";
-            } else {
-                syncStatusBadge.className = "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200";
-                syncStatusBadge.querySelector('span').className = "w-2 h-2 rounded-full bg-blue-500";
-            }
-            syncStatusText.textContent = text;
-        }
-
-        function setupRealtimeSync() {
-            if (!isCloudConnected || !db) return;
-            if (unsubscribeListener) unsubscribeListener();
-
-            const attendeesCol = collection(db, 'artifacts', appId, 'public', 'data', 'attendees');
-            
-            unsubscribeListener = onSnapshot(attendeesCol, (snapshot) => {
-                const list = [];
-                snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    if (!data.eventCode || data.eventCode === eventCode) {
-                        list.push({ id: docSnap.id, ...data });
                     }
+                }
+                if (!schoolVal || schoolVal === '1') schoolVal = 'N/A';
+
+                // Strict Yes / No for Translation
+                let translationDisplay = 'No';
+                const transRaw = (row[transIdx] || row[20] || '').toLowerCase();
+                if (transRaw.includes('yes') || transRaw === 'y' || transRaw === 'true') {
+                    translationDisplay = 'Yes';
+                }
+
+                const qrCode = (qrIdx < row.length && row[qrIdx]) ? row[qrIdx].replace(/^"|"$/g, '') : fullName;
+
+                parsed.push({
+                    id: 'att_' + Date.now() + '_' + i,
+                    name: fullName,
+                    email: email,
+                    school: schoolVal,
+                    translation: translationDisplay,
+                    qrContent: qrCode,
+                    checkedIn: false,
+                    checkInTime: null,
+                    isWalkin: false
                 });
-                attendees = list;
-                saveToLocalStorage();
-                updateView();
-            }, (error) => {
-                console.error("Firestore sync error:", error);
-                showDebug(`Cloud sync fallback. (${error.message})`, true);
-                loadFromLocalStorage();
-                updateView();
-            });
-        }
-
-        function saveToLocalStorage() {
-            try {
-                localStorage.setItem(`qr_attendees_${eventCode}`, JSON.stringify(attendees));
-            } catch(e){}
-        }
-
-        function loadFromLocalStorage() {
-            try {
-                const data = localStorage.getItem(`qr_attendees_${eventCode}`);
-                if (data) attendees = JSON.parse(data);
-            } catch(e){}
-        }
-
-        function csvToArray(strData, strDelimiter = ",") {
-            const objPattern = new RegExp(
-                ("(\\" + strDelimiter + "|\\r?\\n|\\r|^)" +
-                "(?:\"([^\"]*(?:\"\"[^\"]*)*)\"|" +
-                "([^\"\\" + strDelimiter + "\\r\\n]*))"),
-                "gi"
-            );
-            const arrData = [[]];
-            let arrMatches = null;
-            while (arrMatches = objPattern.exec(strData)) {
-                const strMatchedDelimiter = arrMatches[1];
-                if (strMatchedDelimiter.length && strMatchedDelimiter !== strDelimiter) {
-                    arrData.push([]);
-                }
-                let strMatchedValue;
-                if (arrMatches[2]) {
-                    strMatchedValue = arrMatches[2].replace(new RegExp("\"\"", "g"), "\"");
-                } else {
-                    strMatchedValue = arrMatches[3];
-                }
-                arrData[arrData.length - 1].push(strMatchedValue);
             }
-            if (arrData.length > 0 && arrData[arrData.length - 1].length === 1 && arrData[arrData.length - 1][0] === "") {
-                arrData.pop();
-            }
-            return arrData;
+            return parsed;
         }
 
-        // CSV Upload Handler
-        csvFileInput.addEventListener('change', async function(e) {
-            initAudio();
+        // CSV File Reader
+        csvFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-                showDebug(`<strong>⚠️ Cannot read binary Excel files directly!</strong><br>In Excel: Click <em>File > Save As</em> and select <strong>CSV (Comma delimited) (*.csv)</strong>.`, true);
-                csvFileInput.value = '';
-                return;
-            }
-
             const reader = new FileReader();
-            reader.onload = async function(evt) {
-                try {
-                    let text = evt.target.result.replace(/^\ufeff/, '');
-                    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-                    const lines = text.split('\n').filter(l => l.trim() !== '');
-                    if (lines.length === 0) {
-                        showDebug(`⚠️ The uploaded file is empty.`, true);
-                        return;
-                    }
-
-                    let delimiter = ',';
-                    const firstLine = lines[0];
-                    if ((firstLine.match(/\t/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = '\t';
-                    if ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = ';';
-
-                    const rawRows = csvToArray(text, delimiter);
-                    if (rawRows.length === 0) {
-                        showDebug(`⚠️ Could not parse CSV rows.`, true);
-                        return;
-                    }
-
-                    let firstNameIdx = -1, lastNameIdx = -1, fullNameIdx = -1, emailIdx = -1, schoolIdx = -1;
-                    
-                    const headerRow = rawRows[0];
-                    headerRow.forEach((col, idx) => {
-                        if (!col) return;
-                        const c = col.toLowerCase().trim();
-                        
-                        if (c.includes('first') || c.includes('fname') || c.includes('given')) firstNameIdx = idx;
-                        else if (c.includes('last') || c.includes('lname') || c.includes('surname') || c.includes('family')) lastNameIdx = idx;
-                        else if ((c.includes('name') || c.includes('attendee') || c.includes('participant') || c.includes('guest') || c.includes('user')) && !c.includes('school') && !c.includes('org') && !c.includes('company')) fullNameIdx = idx;
-                        
-                        if (c.includes('email') || c.includes('mail') || c.includes('qr') || c.includes('code') || c.includes('ticket') || c.includes('id')) emailIdx = idx;
-                        
-                        if (c.includes('school') || c.includes('org') || c.includes('company') || c.includes('building') || c.includes('group') || c.includes('department')) schoolIdx = idx;
-                    });
-
-                    const hasHeaderMatch = (firstNameIdx !== -1 || lastNameIdx !== -1 || fullNameIdx !== -1 || emailIdx !== -1);
-                    const dataStartIdx = hasHeaderMatch ? 1 : 0;
-
-                    const batchDocData = [];
-                    for (let i = dataStartIdx; i < rawRows.length; i++) {
-                        const row = rawRows[i];
-                        if (!row || row.length === 0 || row.every(c => !c || c.trim() === '')) continue;
-
-                        let firstName = '';
-                        let lastName = '';
-                        let email = '';
-                        let school = '';
-
-                        if (hasHeaderMatch) {
-                            if (firstNameIdx !== -1 && row[firstNameIdx]) firstName = row[firstNameIdx].trim();
-                            if (lastNameIdx !== -1 && row[lastNameIdx]) lastName = row[lastNameIdx].trim();
-                            
-                            if (!firstName && !lastName && fullNameIdx !== -1 && row[fullNameIdx]) {
-                                const parts = row[fullNameIdx].trim().split(' ');
-                                firstName = parts[0] || '';
-                                lastName = parts.slice(1).join(' ') || '';
-                            }
-
-                            if (emailIdx !== -1 && row[emailIdx]) email = row[emailIdx].trim().toLowerCase();
-                            if (schoolIdx !== -1 && row[schoolIdx]) school = row[schoolIdx].trim();
-                        } else {
-                            row.forEach((cell, idx) => {
-                                const val = cell ? cell.trim() : '';
-                                if (!val) return;
-                                
-                                if (val.includes('@') && val.includes('.') && !email) {
-                                    email = val.toLowerCase();
-                                } else if (!firstName && isNaN(val) && val.length > 1) {
-                                    const parts = val.split(' ');
-                                    firstName = parts[0] || '';
-                                    lastName = parts.slice(1).join(' ') || '';
-                                } else if (!school && isNaN(val)) {
-                                    school = val;
-                                }
-                            });
-                        }
-
-                        if (firstName || lastName || email) {
-                            const docId = (email || `${firstName}_${lastName}_${i}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-                            batchDocData.push({
-                                id: docId,
-                                firstName: firstName || 'Attendee',
-                                lastName: lastName || '',
-                                email: email || docId,
-                                school: school || 'General',
-                                checkedIn: false,
-                                checkInTime: null,
-                                checkedInBy: null,
-                                isWalkIn: false,
-                                eventCode: eventCode,
-                                createdAt: new Date().toISOString()
-                            });
-                        }
-                    }
-
-                    if (batchDocData.length === 0) {
-                        showDebug("⚠️ Could not locate valid attendee records in CSV. Please verify file content.", true);
-                        return;
-                    }
-
-                    showDebug(`Loading ${batchDocData.length} records...`, false);
-                    
-                    if (isCloudConnected && db) {
-                        let batch = writeBatch(db);
-                        let count = 0;
-                        for (const item of batchDocData) {
-                            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
-                            batch.set(docRef, item, { merge: true });
-                            count++;
-                            if (count % 400 === 0) {
-                                await batch.commit();
-                                batch = writeBatch(db);
-                            }
-                        }
-                        if (count % 400 !== 0) {
-                            await batch.commit();
-                        }
-                    } else {
-                        // Merge locally and broadcast
-                        batchDocData.forEach(item => {
-                            const existingIdx = attendees.findIndex(a => a.id === item.id);
-                            if (existingIdx >= 0) {
-                                attendees[existingIdx] = { ...attendees[existingIdx], ...item };
-                            } else {
-                                attendees.push(item);
-                            }
-                        });
-                        saveToLocalStorage();
-                        updateView();
-                        broadcastStateUpdate();
-                    }
-
-                    showDebug(`Successfully loaded and synced ${batchDocData.length} attendees!`, false);
-                    fileStatus.textContent = `Event "${eventCode}" actively syncing ${batchDocData.length} attendees.`;
-                    fileStatus.className = "text-emerald-600 font-medium text-sm mt-1";
-                    csvFileInput.value = '';
-                } catch (err) {
-                    console.error("CSV Parse Error:", err);
-                    showDebug(`Error parsing CSV file: ${err.message}`, true);
-                }
+            reader.onload = (evt) => {
+                attendees = parseCSV(evt.target.result);
+                document.getElementById('file-status').textContent = `Loaded ${attendees.length} attendees from CSV.`;
+                renderTable();
+                updateStats();
             };
             reader.readAsText(file);
         });
 
-        async function populateCameraList() {
-            try {
-                const devices = await Html5Qrcode.getCameras();
-                cameraSelect.innerHTML = '';
-                if (devices && devices.length > 0) {
-                    devices.forEach((dev, idx) => {
-                        const opt = document.createElement('option');
-                        opt.value = dev.id;
-                        opt.textContent = dev.label || `Camera ${idx + 1}`;
-                        cameraSelect.appendChild(opt);
-                    });
-                } else {
-                    cameraSelect.innerHTML = '<option value="">No camera found</option>';
-                }
-            } catch (err) {
-                cameraSelect.innerHTML = '<option value="">Camera access restricted</option>';
+        // Toggle Check-In
+        window.toggleCheckIn = function(id) {
+            const att = attendees.find(a => a.id === id);
+            if (att) {
+                att.checkedIn = !att.checkedIn;
+                att.checkInTime = att.checkedIn ? new Date().toLocaleTimeString() : null;
+                renderTable();
+                updateStats();
+                showAlert(att.checkedIn ? 'success' : 'info', att);
             }
-        }
+        };
 
-        btnToggleScanner.addEventListener('click', () => {
-            initAudio();
-            if (isScannerRunning) {
-                stopScanner();
-            } else {
-                startScanner();
-            }
-        });
+        // Render Table with Full Width & Responsive Horizontal Scroll
+        function renderTable() {
+            let filtered = attendees.filter(att => {
+                const matchesFilter = 
+                    currentFilter === 'all' ? true :
+                    currentFilter === 'checked' ? att.checkedIn :
+                    !att.checkedIn;
+                
+                const matchesSearch = 
+                    att.name.toLowerCase().includes(searchTerm) ||
+                    att.email.toLowerCase().includes(searchTerm) ||
+                    att.school.toLowerCase().includes(searchTerm) ||
+                    att.qrContent.toLowerCase().includes(searchTerm);
 
-        async function startScanner() {
-            try {
-                const selectedCamId = cameraSelect.value;
-                if (!html5QrCode) {
-                    html5QrCode = new Html5Qrcode("reader");
-                }
-                const config = { fps: 10, qrbox: { width: 220, height: 220 } };
-                const cameraConfig = selectedCamId ? { deviceId: { exact: selectedCamId } } : { facingMode: "environment" };
-
-                await html5QrCode.start(
-                    cameraConfig,
-                    config,
-                    (decodedText) => handleScanSuccess(decodedText),
-                    (errorMessage) => {}
-                );
-
-                isScannerRunning = true;
-                scannerBtnText.textContent = "Stop";
-                btnToggleScanner.className = "px-3.5 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap";
-                btnToggleScanner.querySelector('i').className = "fa-solid fa-stop";
-                cameraError.classList.add('hidden');
-            } catch (err) {
-                console.error("Scanner Error:", err);
-                cameraError.textContent = `Camera Error: ${err.message || 'Permission denied'}`;
-                cameraError.classList.remove('hidden');
-            }
-        }
-
-        async function stopScanner() {
-            if (html5QrCode && isScannerRunning) {
-                await html5QrCode.stop();
-                isScannerRunning = false;
-                scannerBtnText.textContent = "Start";
-                btnToggleScanner.className = "px-3.5 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs sm:text-sm font-medium flex items-center gap-2 transition-colors whitespace-nowrap";
-                btnToggleScanner.querySelector('i').className = "fa-solid fa-play";
-            }
-        }
-
-        function handleScanSuccess(decodedText) {
-            const now = Date.now();
-            if (decodedText === lastScanText && (now - lastScanTime) < 2500) {
-                return;
-            }
-            lastScanText = decodedText;
-            lastScanTime = now;
-            processCheckIn(decodedText);
-        }
-
-        async function processCheckIn(queryStr) {
-            if (!queryStr || !queryStr.trim()) return;
-            const text = queryStr.trim().toLowerCase();
-
-            let matched = attendees.find(a => 
-                (a.email && a.email.toLowerCase() === text) ||
-                (a.id && a.id.toLowerCase() === text) ||
-                (`${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase() === text)
-            );
-
-            if (!matched) {
-                matched = attendees.find(a => 
-                    (a.email && a.email.toLowerCase().includes(text)) ||
-                    (`${a.firstName || ''} ${a.lastName || ''}`.trim().toLowerCase().includes(text))
-                );
-            }
-
-            if (matched) {
-                if (matched.checkedIn) {
-                    playBeep('warning');
-                    showAlertBox('warning', 'Already Checked In', `${matched.firstName} ${matched.lastName} was previously checked in at ${matched.checkInTime || 'an earlier time'} (${matched.checkedInBy || 'Station'}).`);
-                } else {
-                    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    matched.checkedIn = true;
-                    matched.checkInTime = timeStr;
-                    matched.checkedInBy = stationName;
-
-                    if (isCloudConnected && db) {
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', matched.id);
-                        await setDoc(docRef, matched, { merge: true });
-                    } else {
-                        saveToLocalStorage();
-                        updateView();
-                        broadcastStateUpdate();
-                    }
-
-                    playBeep('success');
-                    showAlertBox('success', 'Check-In Successful!', `WELCOME: ${matched.firstName} ${matched.lastName} (${matched.school || 'General'})`);
-                }
-            } else {
-                playBeep('error');
-                showAlertBox('error', 'Attendee Not Found', `No matching record found for "${queryStr}". Use Walk-in button to register them on the spot.`);
-            }
-        }
-
-        function showAlertBox(type, title, msg) {
-            alertBox.className = "p-6 rounded-2xl shadow-sm border transition-all duration-300 min-h-[160px] flex items-center justify-center ";
-            if (type === 'success') {
-                alertBox.classList.add('bg-emerald-500', 'border-emerald-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
-                        <i class="fa-solid fa-circle-check"></i>
-                    </div>
-                    <h3 class="text-xl font-bold">${title}</h3>
-                    <p class="text-sm text-emerald-50 font-medium">${msg}</p>
-                `;
-            } else if (type === 'warning') {
-                alertBox.classList.add('bg-amber-500', 'border-amber-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
-                        <i class="fa-solid fa-triangle-exclamation"></i>
-                    </div>
-                    <h3 class="text-xl font-bold">${title}</h3>
-                    <p class="text-sm text-amber-50 font-medium">${msg}</p>
-                `;
-            } else {
-                alertBox.classList.add('bg-red-500', 'border-red-600', 'text-white');
-                alertContent.innerHTML = `
-                    <div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white text-2xl mb-1">
-                        <i class="fa-solid fa-circle-xmark"></i>
-                    </div>
-                    <h3 class="text-xl font-bold">${title}</h3>
-                    <p class="text-sm text-red-50 font-medium">${msg}</p>
-                `;
-            }
-        }
-
-        function updateView() {
-            // Update Stats
-            const total = attendees.length;
-            const checkedInCount = attendees.filter(a => a.checkedIn).length;
-            const remainingCount = total - checkedInCount;
-            const walkinsCount = attendees.filter(a => a.isWalkIn).length;
-
-            statTotal.textContent = total;
-            statCheckedIn.textContent = checkedInCount;
-            statRemaining.textContent = remainingCount;
-            statWalkins.textContent = walkinsCount;
-
-            btnExport.disabled = total === 0;
-            if (total > 0) {
-                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-800 text-white hover:bg-slate-900 cursor-pointer shadow-sm";
-            } else {
-                btnExport.className = "flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors bg-slate-200 text-slate-400 cursor-not-allowed";
-            }
-
-            // Filter & Search
-            let filtered = attendees.filter(a => {
-                if (currentFilter === 'checked') return a.checkedIn;
-                if (currentFilter === 'pending') return !a.checkedIn;
-                return true;
+                return matchesFilter && matchesSearch;
             });
-
-            if (searchTerm.trim()) {
-                const term = searchTerm.toLowerCase().trim();
-                filtered = filtered.filter(a => 
-                    (a.firstName && a.firstName.toLowerCase().includes(term)) ||
-                    (a.lastName && a.lastName.toLowerCase().includes(term)) ||
-                    (a.email && a.email.toLowerCase().includes(term)) ||
-                    (a.school && a.school.toLowerCase().includes(term))
-                );
-            }
 
             if (filtered.length === 0) {
                 tableContainer.innerHTML = `
                     <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-                        <i class="fa-solid fa-users-slash text-4xl mb-3 opacity-30"></i>
-                        <p class="text-base font-semibold text-slate-600">${attendees.length === 0 ? 'No attendees loaded' : 'No matching attendees'}</p>
-                        <p class="text-xs text-slate-400 mt-1 max-w-sm">${attendees.length === 0 ? 'Upload a CSV/TXT list or click "Walk-in" to add attendees.' : 'Try adjusting your search filter.'}</p>
-                    </div>
-                `;
+                        <i class="fa-solid fa-magnifying-glass text-3xl mb-2 opacity-40"></i>
+                        <p class="text-xs font-bold text-slate-600">No matching records found</p>
+                    </div>`;
                 return;
             }
 
             let html = `
-                <table class="w-full text-left border-collapse min-w-[550px]">
-                    <thead>
-                        <tr class="border-b border-slate-200 bg-slate-100/70 text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-sm">
-                            <th class="py-3 px-4">Attendee Name</th>
-                            <th class="py-3 px-4">Email / ID</th>
-                            <th class="py-3 px-4">School / Org</th>
-                            <th class="py-3 px-4">Status</th>
-                            <th class="py-3 px-4 text-right">Action</th>
+                <table class="w-full min-w-[750px] text-left border-collapse">
+                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-400 uppercase text-[10px] font-extrabold tracking-wider sticky top-0 z-10 bg-slate-50">
+                        <tr>
+                            <th class="p-3 whitespace-nowrap">ATTENDEE NAME</th>
+                            <th class="p-3 whitespace-nowrap">TRANSLATION</th>
+                            <th class="p-3 whitespace-nowrap">EMAIL / ID</th>
+                            <th class="p-3 whitespace-nowrap">SCHOOL / ORG</th>
+                            <th class="p-3 text-right whitespace-nowrap">STATUS</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100 text-xs sm:text-sm">
-            `;
+                    <tbody class="divide-y divide-slate-100 text-xs sm:text-sm">`;
 
-            filtered.forEach(item => {
+            filtered.forEach(att => {
+                const transBadge = att.translation === 'Yes'
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                         <i class="fa-solid fa-language mr-1"></i> Yes
+                       </span>`
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                         No
+                       </span>`;
+
                 html += `
                     <tr class="hover:bg-slate-50/80 transition-colors">
-                        <td class="py-3 px-4 font-semibold text-slate-800">
-                            ${escapeHtml(item.firstName)} ${escapeHtml(item.lastName)}
-                            ${item.isWalkIn ? '<span class="ml-1.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded font-bold uppercase">Walk-in</span>' : ''}
+                        <td class="p-3 font-semibold text-slate-800 whitespace-nowrap">
+                            ${att.name}
+                            ${att.isWalkin ? '<span class="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-extrabold ml-1">WALK-IN</span>' : ''}
                         </td>
-                        <td class="py-3 px-4 text-slate-500 font-mono text-xs">${escapeHtml(item.email || '-')}</td>
-                        <td class="py-3 px-4 text-slate-600">${escapeHtml(item.school || 'General')}</td>
-                        <td class="py-3 px-4">
-                            ${item.checkedIn ? 
-                                `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    <i class="fa-solid fa-check text-[10px]"></i> Checked In ${item.checkInTime ? `<span class="opacity-75 font-normal">(${item.checkInTime})</span>` : ''}
-                                 </span>` : 
-                                `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                    Pending
-                                 </span>`
-                            }
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                            <button onclick="toggleAttendeeCheckIn('${item.id}')" class="px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                                item.checkedIn ? 
-                                'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200' : 
-                                'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                        <td class="p-3 whitespace-nowrap">${transBadge}</td>
+                        <td class="p-3 text-slate-500 font-normal whitespace-nowrap">${att.email || '-'}</td>
+                        <td class="p-3 font-medium text-slate-700 whitespace-nowrap">${att.school}</td>
+                        <td class="p-3 text-right whitespace-nowrap">
+                            <button onclick="toggleCheckIn('${att.id}')" class="px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                                att.checkedIn 
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200' 
+                                : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
                             }">
-                                ${item.checkedIn ? 'Undo' : 'Check In'}
+                                ${att.checkedIn ? '<i class="fa-solid fa-check mr-1"></i> Checked In' : 'Check In'}
                             </button>
                         </td>
-                    </tr>
-                `;
+                    </tr>`;
             });
 
             html += `</tbody></table>`;
             tableContainer.innerHTML = html;
         }
 
-        window.toggleAttendeeCheckIn = async function(id) {
-            initAudio();
-            const item = attendees.find(a => a.id === id);
-            if (!item) return;
+        // Stats Counter
+        function updateStats() {
+            const total = attendees.length;
+            const checked = attendees.filter(a => a.checkedIn).length;
+            const walkins = attendees.filter(a => a.isWalkin).length;
 
-            item.checkedIn = !item.checkedIn;
-            if (item.checkedIn) {
-                item.checkInTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                item.checkedInBy = stationName;
-                playBeep('success');
-            } else {
-                item.checkInTime = null;
-                item.checkedInBy = null;
-            }
-
-            if (isCloudConnected && db) {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', item.id);
-                await setDoc(docRef, item, { merge: true });
-            } else {
-                saveToLocalStorage();
-                updateView();
-                broadcastStateUpdate();
-            }
-        };
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-checked-in').textContent = checked;
+            document.getElementById('stat-remaining').textContent = total - checked;
+            document.getElementById('stat-walkins').textContent = walkins;
         }
+
+        // Alert Feedback Display
+        function showAlert(type, attendee) {
+            if (type === 'success') {
+                alertBox.className = "p-5 rounded-2xl shadow-sm border bg-emerald-50 border-emerald-200 transition-all duration-300 flex items-center justify-center";
+                alertContent.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center text-lg font-bold mb-1"><i class="fa-solid fa-check"></i></div>
+                    <h3 class="text-base font-extrabold text-emerald-900">${attendee.name}</h3>
+                    <p class="text-xs text-emerald-700 font-medium">${attendee.school} • Translation: ${attendee.translation}</p>
+                    <span class="text-[10px] uppercase tracking-wider font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full mt-1">Checked In</span>
+                `;
+            } else if (type === 'warning') {
+                alertBox.className = "p-5 rounded-2xl shadow-sm border bg-amber-50 border-amber-200 transition-all duration-300 flex items-center justify-center";
+                alertContent.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center text-lg font-bold mb-1"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <h3 class="text-base font-extrabold text-amber-900">${attendee.name}</h3>
+                    <p class="text-xs text-amber-700 font-medium">Already Checked In at ${attendee.checkInTime || 'earlier'}</p>
+                `;
+            } else if (type === 'not_found') {
+                alertBox.className = "p-5 rounded-2xl shadow-sm border bg-red-50 border-red-200 transition-all duration-300 flex items-center justify-center";
+                alertContent.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center text-lg font-bold mb-1"><i class="fa-solid fa-xmark"></i></div>
+                    <h3 class="text-base font-extrabold text-red-900">Attendee Not Found</h3>
+                    <p class="text-xs text-red-600">No match found for that code or name.</p>
+                `;
+            }
+        }
+
+        // Scan / Manual Query Matcher
+        function processScan(code) {
+            if (!code) return;
+            const query = code.toLowerCase().trim();
+            const match = attendees.find(a => 
+                a.qrContent.toLowerCase().trim() === query ||
+                a.name.toLowerCase().trim() === query ||
+                (a.email && a.email.toLowerCase().trim() === query)
+            );
+
+            if (match) {
+                if (match.checkedIn) {
+                    showAlert('warning', match);
+                } else {
+                    match.checkedIn = true;
+                    match.checkInTime = new Date().toLocaleTimeString();
+                    renderTable();
+                    updateStats();
+                    showAlert('success', match);
+                }
+            } else {
+                showAlert('not_found', null);
+            }
+        }
+
+        // Search & Filter Tabs
+        searchInput.addEventListener('input', (e) => {
+            searchTerm = e.target.value.toLowerCase().trim();
+            renderTable();
+        });
+
+        document.querySelectorAll('.filter-tab').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-tab').forEach(b => b.className = 'filter-tab px-3 py-1 rounded-lg text-slate-500');
+                e.target.className = 'filter-tab px-3 py-1 rounded-lg bg-white text-slate-800 shadow-sm font-semibold';
+                currentFilter = e.target.id.replace('filter-', '');
+                renderTable();
+            });
+        });
 
         manualScanForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            initAudio();
-            const val = manualScanInput.value;
-            if (val) {
-                processCheckIn(val);
-                manualScanInput.value = '';
+            processScan(manualScanInput.value);
+            manualScanInput.value = '';
+        });
+
+        // Camera Toggle
+        btnToggleScanner.addEventListener('click', () => {
+            if (isScannerRunning) {
+                html5QrCode.stop().then(() => {
+                    isScannerRunning = false;
+                    scannerBtnText.textContent = "Start";
+                    document.getElementById('reader-placeholder').classList.remove('hidden');
+                });
+            } else {
+                html5QrCode = new Html5Qrcode("reader");
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 180, height: 180 } },
+                    (decodedText) => { processScan(decodedText); }
+                ).then(() => {
+                    isScannerRunning = true;
+                    scannerBtnText.textContent = "Stop";
+                    document.getElementById('reader-placeholder').classList.add('hidden');
+                }).catch(err => {
+                    alert("Camera error: " + err);
+                });
             }
         });
 
         // Walk-in Modal Handlers
-        btnWalkin.addEventListener('click', () => {
-            initAudio();
-            walkinFirst.value = '';
-            walkinLast.value = '';
-            walkinEmail.value = '';
-            walkinSchool.value = '';
-            walkinModal.classList.remove('hidden');
-        });
+        const walkinModal = document.getElementById('walkin-modal');
+        document.getElementById('btn-walkin').addEventListener('click', () => walkinModal.classList.remove('hidden'));
+        document.getElementById('btn-close-modal').addEventListener('click', () => walkinModal.classList.add('hidden'));
+        document.getElementById('btn-cancel-walkin').addEventListener('click', () => walkinModal.classList.add('hidden'));
 
-        btnCloseModal.addEventListener('click', () => walkinModal.classList.add('hidden'));
-        btnCancelWalkin.addEventListener('click', () => walkinModal.classList.add('hidden'));
+        document.getElementById('btn-save-walkin').addEventListener('click', () => {
+            const name = document.getElementById('walkin-name').value.trim();
+            if (!name) return alert('Attendee name is required.');
 
-        btnSaveWalkin.addEventListener('click', async () => {
-            const first = walkinFirst.value.trim();
-            const last = walkinLast.value.trim();
-            const email = walkinEmail.value.trim();
-            const school = walkinSchool.value.trim();
-
-            if (!first) {
-                alertBox.className = "p-4 rounded-xl bg-red-100 text-red-800 border border-red-200 text-sm font-semibold mb-2";
-                return;
-            }
-
-            const docId = `walkin_${Date.now()}`;
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-            const newWalkin = {
-                id: docId,
-                firstName: first,
-                lastName: last,
-                email: email || `${first.toLowerCase()}_${Date.now()}@walkin.local`,
-                school: school || 'Walk-in Guest',
+            const newAtt = {
+                id: 'att_' + Date.now(),
+                name: name,
+                email: document.getElementById('walkin-email').value.trim(),
+                school: document.getElementById('walkin-school').value.trim() || 'N/A',
+                translation: document.getElementById('walkin-translator').value,
+                qrContent: name,
                 checkedIn: true,
-                checkInTime: timeStr,
-                checkedInBy: stationName,
-                isWalkIn: true,
-                eventCode: eventCode,
-                createdAt: new Date().toISOString()
+                checkInTime: new Date().toLocaleTimeString(),
+                isWalkin: true
             };
 
-            if (isCloudConnected && db) {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', docId);
-                await setDoc(docRef, newWalkin);
-            } else {
-                attendees.push(newWalkin);
-                saveToLocalStorage();
-                updateView();
-                broadcastStateUpdate();
-            }
-
-            playBeep('success');
+            attendees.unshift(newAtt);
+            renderTable();
+            updateStats();
+            showAlert('success', newAtt);
             walkinModal.classList.add('hidden');
-            showAlertBox('success', 'Walk-in Checked In!', `REGISTERED: ${first} ${last}`);
+            
+            document.getElementById('walkin-name').value = '';
+            document.getElementById('walkin-email').value = '';
+            document.getElementById('walkin-school').value = '';
         });
 
-        // Custom Firebase Modal Handlers
-        document.getElementById('btn-custom-firebase').addEventListener('click', () => {
-            initAudio();
-            document.getElementById('custom-firebase-json').value = savedCustomFb || '';
-            customFirebaseModal.classList.remove('hidden');
-        });
-        document.getElementById('btn-close-firebase-modal').addEventListener('click', () => customFirebaseModal.classList.add('hidden'));
-        document.getElementById('btn-cancel-firebase-cfg').addEventListener('click', () => customFirebaseModal.classList.add('hidden'));
-        
-        document.getElementById('btn-save-firebase-cfg').addEventListener('click', () => {
-            const raw = document.getElementById('custom-firebase-json').value.trim();
-            if (raw) {
-                try {
-                    JSON.parse(raw);
-                    localStorage.setItem('custom_firebase_config', raw);
-                    window.location.reload();
-                } catch(e) {
-                    alert('Invalid JSON formatting. Please enter valid Firebase config.');
-                }
-            }
-        });
-        document.getElementById('btn-clear-firebase-cfg').addEventListener('click', () => {
-            localStorage.removeItem('custom_firebase_config');
-            window.location.reload();
-        });
-
-        // Share Session Modal Trigger
-        btnShareSession.addEventListener('click', () => {
-            initAudio();
-            const currentUrl = window.location.href.split('?')[0];
-            const shareableUrl = `${currentUrl}?event=${encodeURIComponent(eventCode)}`;
-            shareLinkInput.value = shareableUrl;
-            document.getElementById('share-modal-code-display').textContent = eventCode;
-            copyStatusMsg.classList.add('hidden');
-            shareModal.classList.remove('hidden');
-        });
-
-        document.getElementById('btn-close-share-modal').addEventListener('click', () => shareModal.classList.add('hidden'));
-        document.getElementById('btn-done-share').addEventListener('click', () => shareModal.classList.add('hidden'));
-
-        btnCopyShareLink.addEventListener('click', () => {
-            shareLinkInput.select();
-            document.execCommand('copy');
-            copyStatusMsg.classList.remove('hidden');
-            setTimeout(() => copyStatusMsg.classList.add('hidden'), 3000);
-        });
-
-        // Event Code Modal
-        btnEventCode.addEventListener('click', () => {
-            initAudio();
-            document.getElementById('event-code-input').value = eventCode;
-            eventModal.classList.remove('hidden');
-        });
-        document.getElementById('btn-close-event-modal').addEventListener('click', () => eventModal.classList.add('hidden'));
-        document.getElementById('btn-save-event-code').addEventListener('click', () => {
-            const val = document.getElementById('event-code-input').value.trim().toUpperCase();
-            if (val) {
-                eventCode = val;
-                localStorage.setItem('qr_event_code', eventCode);
-                eventCodeText.textContent = eventCode;
-                eventModal.classList.add('hidden');
-                
-                if (isCloudConnected) {
-                    setupRealtimeSync();
-                } else {
-                    initPeerSync();
-                }
+        // Clear All Data
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            if (confirm("Clear all loaded attendee data?")) {
+                attendees = [];
+                renderTable();
+                updateStats();
+                document.getElementById('file-status').textContent = "Upload CSV/TXT file or join shared event ID to sync across stations.";
             }
         });
 
-        // Station Name Handler
-        stationNameInput.addEventListener('change', (e) => {
-            stationName = e.target.value.trim() || 'Door 1';
-            localStorage.setItem('qr_station_name', stationName);
-        });
-
-        // Clear Data Handler
-        btnClear.addEventListener('click', () => {
-            initAudio();
-            if (attendees.length === 0) return;
-            confirmModal.classList.remove('hidden');
-        });
-        document.getElementById('confirm-cancel-btn').addEventListener('click', () => confirmModal.classList.add('hidden'));
-        document.getElementById('confirm-ok-btn').addEventListener('click', async () => {
-            confirmModal.classList.add('hidden');
-            try {
-                showDebug("Clearing event data...", false);
-                if (isCloudConnected && db) {
-                    let batch = writeBatch(db);
-                    let count = 0;
-                    for (const a of attendees) {
-                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'attendees', a.id);
-                        batch.delete(docRef);
-                        count++;
-                        if (count % 400 === 0) {
-                            await batch.commit();
-                            batch = writeBatch(db);
-                        }
-                    }
-                    if (count % 400 !== 0) {
-                        await batch.commit();
-                    }
-                } else {
-                    attendees = [];
-                    saveToLocalStorage();
-                    updateView();
-                    broadcastStateUpdate();
-                }
-                showDebug("Event data cleared successfully.", false);
-            } catch (err) {
-                console.error("Clear data error:", err);
-                showDebug(`Failed to clear data: ${err.message}`, true);
-            }
-        });
-
-        // Export List to CSV
-        btnExport.addEventListener('click', () => {
-            initAudio();
-            if (attendees.length === 0) return;
-            let csv = 'First Name,Last Name,Email,School/Org,Checked In,Check-in Time,Checked-in By Station,Walk-in\n';
+        // Export CSV
+        document.getElementById('btn-export').addEventListener('click', () => {
+            if (attendees.length === 0) return alert("No data to export.");
+            
+            let csv = "Name,Translation,Email,School/Org,Checked In,Check-In Time\n";
             attendees.forEach(a => {
-                const row = [
-                    `"${a.firstName || ''}"`,
-                    `"${a.lastName || ''}"`,
-                    `"${a.email || ''}"`,
-                    `"${a.school || ''}"`,
-                    a.checkedIn ? 'YES' : 'NO',
-                    `"${a.checkInTime || ''}"`,
-                    `"${a.checkedInBy || ''}"`,
-                    a.isWalkIn ? 'YES' : 'NO'
-                ];
-                csv += row.join(',') + '\n';
+                csv += `"${a.name}","${a.translation}","${a.email}","${a.school}","${a.checkedIn ? 'Yes' : 'No'}","${a.checkInTime || ''}"\n`;
             });
 
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `Event_${eventCode}_Attendees_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        });
-
-        searchInput.addEventListener('input', (e) => {
-            searchTerm = e.target.value;
-            updateView();
-        });
-
-        const filterTabs = document.querySelectorAll('.filter-tab');
-        filterTabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                filterTabs.forEach(t => {
-                    t.className = 'filter-tab px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all';
-                });
-                e.target.className = 'filter-tab px-3 py-1.5 rounded-lg bg-white text-slate-800 shadow-sm font-semibold transition-all';
-                
-                if (e.target.id === 'filter-all') currentFilter = 'all';
-                if (e.target.id === 'filter-checked') currentFilter = 'checked';
-                if (e.target.id === 'filter-pending') currentFilter = 'pending';
-                updateView();
-            });
-        });
-
-        function showDebug(message, isError = true) {
-            debugBanner.classList.remove('hidden', 'bg-red-50', 'text-red-700', 'border-red-200', 'bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
-            if (isError) {
-                debugBanner.classList.add('bg-red-50', 'text-red-700', 'border-red-200');
-            } else {
-                debugBanner.classList.add('bg-emerald-50', 'text-emerald-700', 'border-emerald-200');
-            }
-            debugBanner.innerHTML = message;
-        }
-
-        // Initialize App on DOM Load
-        window.addEventListener('DOMContentLoaded', () => {
-            eventCodeText.textContent = eventCode;
-            stationNameInput.value = stationName;
-            populateCameraList();
-            initializeAppAuthAndSync();
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `registration_export_${Date.now()}.csv`);
+            a.click();
         });
     </script>
 </body>
